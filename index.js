@@ -1,14 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const app = express();
 
-app.get('/', (req, res) => {
-    res.send('Bot is running');
-});
-
-app.listen(3000, () => {
-    console.log('Web server running');
-});
-require('dotenv').config();
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(3000, () => console.log('Web server running'));
 
 const {
     Client,
@@ -22,7 +17,8 @@ const {
     REST,
     Routes,
     SlashCommandBuilder,
-    ChannelType
+    ChannelType,
+    StringSelectMenuBuilder
 } = require('discord.js');
 
 const { MongoClient } = require('mongodb');
@@ -33,11 +29,6 @@ const guildId = process.env.GUILD_ID;
 const staffRoleId = process.env.STAFF_ROLE_ID;
 const mongoURI = process.env.MONGO_URI;
 
-if (!token || !clientId || !guildId || !staffRoleId || !mongoURI) {
-    console.log("❌ Missing environment variables.");
-    process.exit(1);
-}
-
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
@@ -45,7 +36,7 @@ const client = new Client({
 let database;
 let openTickets = new Map();
 
-// ===== CONNECT TO MONGODB =====
+// ===== DATABASE =====
 async function connectDB() {
     const mongo = new MongoClient(mongoURI);
     await mongo.connect();
@@ -53,17 +44,6 @@ async function connectDB() {
     console.log("✅ Connected to MongoDB");
 }
 
-// ===== GET COUNTER =====
-async function getTicketCount() {
-    const data = await database.collection("config").findOne({ name: "counter" });
-    if (!data) {
-        await database.collection("config").insertOne({ name: "counter", value: 0 });
-        return 0;
-    }
-    return data.value;
-}
-
-// ===== INCREMENT COUNTER =====
 async function incrementTicketCount() {
     const result = await database.collection("config").findOneAndUpdate(
         { name: "counter" },
@@ -73,7 +53,7 @@ async function incrementTicketCount() {
     return result.value.value;
 }
 
-// ===== REGISTER COMMAND =====
+// ===== REGISTER SLASH COMMAND =====
 async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
@@ -93,25 +73,46 @@ client.once('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
+// ===== INTERACTIONS =====
 client.on(Events.InteractionCreate, async interaction => {
 
+    // ===== SLASH COMMAND =====
     if (interaction.isChatInputCommand()) {
+
         if (interaction.commandName === 'ticketpanel') {
 
-            const count = await getTicketCount();
-
             const embed = new EmbedBuilder()
-                .setTitle("🎟 Support Tickets")
-                .setDescription("Click below to open a support ticket.")
-                .setFooter({ text: `Total Tickets Created: ${count}` })
+                .setTitle("🎟 Open a Ticket")
+                .setDescription("Select the type of ticket below.")
                 .setColor(0x5865F2);
 
-            const button = new ButtonBuilder()
-                .setCustomId("create_ticket")
-                .setLabel("Open Ticket")
-                .setStyle(ButtonStyle.Primary);
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId("select_ticket_type")
+                .setPlaceholder("Choose a ticket type")
+                .addOptions([
+                    {
+                        label: "Minecraft Server Help",
+                        value: "minecraft",
+                        emoji: "🎮"
+                    },
+                    {
+                        label: "Suggestion",
+                        value: "suggestion",
+                        emoji: "💡"
+                    },
+                    {
+                        label: "Need Help",
+                        value: "help",
+                        emoji: "❓"
+                    },
+                    {
+                        label: "YouTube Collab",
+                        value: "youtube",
+                        emoji: "🎥"
+                    }
+                ]);
 
-            const row = new ActionRowBuilder().addComponents(button);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
 
             await interaction.reply({
                 embeds: [embed],
@@ -120,17 +121,22 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-    if (interaction.isButton()) {
+    // ===== SELECT MENU =====
+    if (interaction.isStringSelectMenu()) {
 
-        if (interaction.customId === "create_ticket") {
+        if (interaction.customId === "select_ticket_type") {
 
             if (openTickets.has(interaction.user.id)) {
-                return interaction.reply({ content: "❌ You already have a ticket.", ephemeral: true });
+                return interaction.reply({
+                    content: "❌ You already have an open ticket.",
+                    ephemeral: true
+                });
             }
 
             await interaction.deferReply({ ephemeral: true });
 
-            const newCount = await incrementTicketCount();
+            const type = interaction.values[0];
+            const count = await incrementTicketCount();
 
             let category = interaction.guild.channels.cache.find(
                 c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
@@ -144,7 +150,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const channel = await interaction.guild.channels.create({
-                name: `ticket-${newCount}`,
+                name: `${type}-${count}`,
                 parent: category.id,
                 permissionOverwrites: [
                     { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -161,22 +167,70 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setLabel("Close Ticket")
                 .setStyle(ButtonStyle.Danger);
 
-            const row = new ActionRowBuilder().addComponents(closeButton);
+            const claimButton = new ButtonBuilder()
+                .setCustomId("claim_ticket")
+                .setLabel("Claim Ticket")
+                .setStyle(ButtonStyle.Success);
+
+            const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎟 Ticket #${count}`)
+                .setDescription(`Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`)
+                .setColor(0x00FF99);
 
             await channel.send({
                 content: `<@&${staffRoleId}>`,
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle(`🎟 Ticket #${newCount}`)
-                        .setDescription(`Welcome ${interaction.user}`)
-                        .setColor(0x00FF99)
-                ],
+                embeds: [embed],
                 components: [row],
                 allowedMentions: { roles: [staffRoleId] }
             });
 
-            await interaction.editReply({ content: `✅ Ticket created: ${channel}` });
+            await interaction.editReply({
+                content: `✅ Ticket created: ${channel}`
+            });
         }
+    }
+
+    // ===== CLAIM SYSTEM =====
+    if (interaction.isButton() && interaction.customId === "claim_ticket") {
+
+        if (!interaction.member.roles.cache.has(staffRoleId)) {
+            return interaction.reply({
+                content: "❌ Only staff can claim tickets.",
+                ephemeral: true
+            });
+        }
+
+        const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+        if (embed.data.description.includes("Not claimed")) {
+
+            embed.setDescription(
+                embed.data.description.replace(
+                    "❌ Not claimed",
+                    `${interaction.user}`
+                )
+            );
+
+            await interaction.update({ embeds: [embed] });
+
+        } else {
+            await interaction.reply({
+                content: "❌ Already claimed.",
+                ephemeral: true
+            });
+        }
+    }
+
+    // ===== CLOSE =====
+    if (interaction.isButton() && interaction.customId === "close_ticket") {
+
+        await interaction.reply("🔒 Closing in 5 seconds...");
+
+        setTimeout(() => {
+            interaction.channel.delete().catch(console.error);
+        }, 5000);
     }
 });
 
