@@ -1,5 +1,14 @@
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Bot is running');
+});
+
+app.listen(3000, () => {
+    console.log('Web server running');
+});
 require('dotenv').config();
-const fs = require('fs');
 
 const {
     Client,
@@ -16,13 +25,16 @@ const {
     ChannelType
 } = require('discord.js');
 
+const { MongoClient } = require('mongodb');
+
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
 const staffRoleId = process.env.STAFF_ROLE_ID;
+const mongoURI = process.env.MONGO_URI;
 
-if (!token || !clientId || !guildId || !staffRoleId) {
-    console.log("❌ Missing values in .env file.");
+if (!token || !clientId || !guildId || !staffRoleId || !mongoURI) {
+    console.log("❌ Missing environment variables.");
     process.exit(1);
 }
 
@@ -30,22 +42,38 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// ===== SIMPLE DATABASE =====
+let database;
+let openTickets = new Map();
 
-function getTicketData() {
-    const raw = fs.readFileSync('./data.json');
-    return JSON.parse(raw);
+// ===== CONNECT TO MONGODB =====
+async function connectDB() {
+    const mongo = new MongoClient(mongoURI);
+    await mongo.connect();
+    database = mongo.db("ticketBot");
+    console.log("✅ Connected to MongoDB");
 }
 
-function saveTicketData(data) {
-    fs.writeFileSync('./data.json', JSON.stringify(data, null, 2));
+// ===== GET COUNTER =====
+async function getTicketCount() {
+    const data = await database.collection("config").findOne({ name: "counter" });
+    if (!data) {
+        await database.collection("config").insertOne({ name: "counter", value: 0 });
+        return 0;
+    }
+    return data.value;
 }
 
-const openTickets = new Map(); // userId -> channelId
+// ===== INCREMENT COUNTER =====
+async function incrementTicketCount() {
+    const result = await database.collection("config").findOneAndUpdate(
+        { name: "counter" },
+        { $inc: { value: 1 } },
+        { upsert: true, returnDocument: "after" }
+    );
+    return result.value.value;
+}
 
-
-// ================= REGISTER SLASH COMMAND =================
-
+// ===== REGISTER COMMAND =====
 async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
@@ -54,8 +82,6 @@ async function registerCommands() {
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
-
-    console.log("Registering slash commands...");
     await rest.put(
         Routes.applicationGuildCommands(clientId, guildId),
         { body: commands }
@@ -63,30 +89,22 @@ async function registerCommands() {
     console.log("Slash commands registered.");
 }
 
-
-// ================= READY =================
-
 client.once('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-
-// ================= INTERACTIONS =================
-
 client.on(Events.InteractionCreate, async interaction => {
 
-    // ===== SLASH COMMAND =====
     if (interaction.isChatInputCommand()) {
-
         if (interaction.commandName === 'ticketpanel') {
 
-            const data = getTicketData();
+            const count = await getTicketCount();
 
             const embed = new EmbedBuilder()
                 .setTitle("🎟 Support Tickets")
                 .setDescription("Click below to open a support ticket.")
-                .setColor(0x5865F2)
-                .setFooter({ text: `Total Tickets Created: ${data.ticketCount}` });
+                .setFooter({ text: `Total Tickets Created: ${count}` })
+                .setColor(0x5865F2);
 
             const button = new ButtonBuilder()
                 .setCustomId("create_ticket")
@@ -102,190 +120,68 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-    // ===== BUTTON HANDLING =====
     if (interaction.isButton()) {
 
-        // ===== CREATE TICKET =====
         if (interaction.customId === "create_ticket") {
 
             if (openTickets.has(interaction.user.id)) {
-                return interaction.reply({
-                    content: "❌ You already have an open ticket.",
-                    ephemeral: true
-                });
+                return interaction.reply({ content: "❌ You already have a ticket.", ephemeral: true });
             }
 
             await interaction.deferReply({ ephemeral: true });
 
-            try {
-                const data = getTicketData();
-                data.ticketCount++;
-                saveTicketData(data);
+            const newCount = await incrementTicketCount();
 
-                let category = interaction.guild.channels.cache.find(
-                    c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
-                );
+            let category = interaction.guild.channels.cache.find(
+                c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
+            );
 
-                if (!category) {
-                    category = await interaction.guild.channels.create({
-                        name: "Tickets",
-                        type: ChannelType.GuildCategory
-                    });
-                }
-
-                const channel = await interaction.guild.channels.create({
-                    name: `ticket-${data.ticketCount}`,
-                    type: ChannelType.GuildText,
-                    parent: category.id,
-                    permissionOverwrites: [
-                        {
-                            id: interaction.guild.id,
-                            deny: [PermissionsBitField.Flags.ViewChannel],
-                        },
-                        {
-                            id: interaction.user.id,
-                            allow: [
-                                PermissionsBitField.Flags.ViewChannel,
-                                PermissionsBitField.Flags.SendMessages
-                            ],
-                        },
-                        {
-                            id: staffRoleId,
-                            allow: [
-                                PermissionsBitField.Flags.ViewChannel,
-                                PermissionsBitField.Flags.SendMessages
-                            ],
-                        },
-                        {
-                            id: interaction.guild.members.me.id,
-                            allow: [
-                                PermissionsBitField.Flags.ViewChannel,
-                                PermissionsBitField.Flags.SendMessages
-                            ],
-                        },
-                    ],
-                });
-
-                openTickets.set(interaction.user.id, channel.id);
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`🎟 Ticket #${data.ticketCount}`)
-                    .setDescription(`Welcome ${interaction.user}!\nA staff member will assist you shortly.\n\nClaimed by: ❌ Not claimed`)
-                    .setColor(0x00FF99);
-
-                const closeButton = new ButtonBuilder()
-                    .setCustomId("close_ticket")
-                    .setLabel("Close Ticket")
-                    .setStyle(ButtonStyle.Danger);
-
-                const claimButton = new ButtonBuilder()
-                    .setCustomId("claim_ticket")
-                    .setLabel("Claim Ticket")
-                    .setStyle(ButtonStyle.Success);
-
-                const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
-
-                await channel.send({
-                    content: `<@&${staffRoleId}>`,
-                    embeds: [embed],
-                    components: [row],
-                    allowedMentions: { roles: [staffRoleId] }
-                });
-
-                await interaction.editReply({
-                    content: `✅ Ticket created: ${channel}`
-                });
-
-            } catch (error) {
-                console.error(error);
-                await interaction.editReply({ content: "❌ Error creating ticket." });
-            }
-        }
-
-        // ===== CLAIM TICKET =====
-        if (interaction.customId === "claim_ticket") {
-
-            if (!interaction.member.roles.cache.has(staffRoleId)) {
-                return interaction.reply({
-                    content: "❌ Only staff can claim tickets.",
-                    ephemeral: true
+            if (!category) {
+                category = await interaction.guild.channels.create({
+                    name: "Tickets",
+                    type: ChannelType.GuildCategory
                 });
             }
 
-            const message = interaction.message;
-            const embed = EmbedBuilder.from(message.embeds[0]);
+            const channel = await interaction.guild.channels.create({
+                name: `ticket-${newCount}`,
+                parent: category.id,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: interaction.guild.members.me.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                ]
+            });
 
-            if (embed.data.description.includes("Claimed by: ❌")) {
+            openTickets.set(interaction.user.id, channel.id);
 
-                embed.setDescription(
-                    embed.data.description.replace(
-                        "Claimed by: ❌ Not claimed",
-                        `Claimed by: ${interaction.user}`
-                    )
-                );
+            const closeButton = new ButtonBuilder()
+                .setCustomId("close_ticket")
+                .setLabel("Close Ticket")
+                .setStyle(ButtonStyle.Danger);
 
-                const disabledClaim = new ButtonBuilder()
-                    .setCustomId("claim_ticket")
-                    .setLabel("Claimed")
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true);
+            const row = new ActionRowBuilder().addComponents(closeButton);
 
-                const closeButton = new ButtonBuilder()
-                    .setCustomId("close_ticket")
-                    .setLabel("Close Ticket")
-                    .setStyle(ButtonStyle.Danger);
+            await channel.send({
+                content: `<@&${staffRoleId}>`,
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle(`🎟 Ticket #${newCount}`)
+                        .setDescription(`Welcome ${interaction.user}`)
+                        .setColor(0x00FF99)
+                ],
+                components: [row],
+                allowedMentions: { roles: [staffRoleId] }
+            });
 
-                const row = new ActionRowBuilder().addComponents(disabledClaim, closeButton);
-
-                await interaction.update({
-                    embeds: [embed],
-                    components: [row]
-                });
-
-            } else {
-                await interaction.reply({
-                    content: "❌ This ticket is already claimed.",
-                    ephemeral: true
-                });
-            }
-        }
-
-        // ===== CLOSE =====
-        if (interaction.customId === "close_ticket") {
-
-            if (
-                !interaction.member.roles.cache.has(staffRoleId) &&
-                !openTickets.has(interaction.user.id)
-            ) {
-                return interaction.reply({
-                    content: "❌ You do not have permission to close this ticket.",
-                    ephemeral: true
-                });
-            }
-
-            await interaction.reply("🔒 Closing ticket in 5 seconds...");
-
-            setTimeout(() => {
-                openTickets.forEach((value, key) => {
-                    if (value === interaction.channel.id) {
-                        openTickets.delete(key);
-                    }
-                });
-
-                interaction.channel.delete().catch(console.error);
-            }, 5000);
+            await interaction.editReply({ content: `✅ Ticket created: ${channel}` });
         }
     }
 });
 
-
-// ================= START =================
-
 (async () => {
-    try {
-        await registerCommands();
-        await client.login(token);
-    } catch (error) {
-        console.error("Startup error:", error);
-    }
+    await connectDB();
+    await registerCommands();
+    await client.login(token);
 })();
