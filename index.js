@@ -18,223 +18,336 @@ const {
     Routes,
     SlashCommandBuilder,
     ChannelType,
-    StringSelectMenuBuilder
+    StringSelectMenuBuilder,
+    RoleSelectMenuBuilder
 } = require('discord.js');
 
-const {
-    joinVoiceChannel,
-    createAudioPlayer,
-    createAudioResource,
-    AudioPlayerStatus,
-    getVoiceConnection
-} = require('@discordjs/voice');
-
-const play = require('play-dl');
 const { MongoClient } = require('mongodb');
 
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID;
-const staffRoleId = process.env.STAFF_ROLE_ID;
 const mongoURI = process.env.MONGO_URI;
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates
-    ]
+    intents: [GatewayIntentBits.Guilds]
 });
 
 let database;
-const musicQueues = new Map(); // guildId -> queue
+const activePolls = new Map();
 
 // ================= DATABASE =================
 async function connectDB() {
     const mongo = new MongoClient(mongoURI);
     await mongo.connect();
-    database = mongo.db("ticketBot");
+    database = mongo.db("multiBot");
     console.log("✅ Connected to MongoDB");
 }
 
-async function incrementTicketCount() {
-    const result = await database.collection("config").findOneAndUpdate(
-        { name: "counter" },
+async function getGuildConfig(guildId) {
+    let config = await database.collection("guildConfigs").findOne({ guildId });
+    if (!config) {
+        config = {
+            guildId,
+            ticketsEnabled: false,
+            suggestionsEnabled: false,
+            staffRoleId: null
+        };
+        await database.collection("guildConfigs").insertOne(config);
+    }
+    return config;
+}
+
+async function updateGuildConfig(guildId, update) {
+    await database.collection("guildConfigs").updateOne(
+        { guildId },
+        { $set: update },
+        { upsert: true }
+    );
+}
+
+async function incrementTicketCount(guildId) {
+    const result = await database.collection("ticketCounters").findOneAndUpdate(
+        { guildId },
         { $inc: { value: 1 } },
         { upsert: true, returnDocument: "after" }
     );
     return result.value.value;
 }
 
-// ================= REGISTER COMMANDS =================
+// ================= TIME PARSER =================
+function parseTime(input) {
+    const match = input.match(/^(\d+)([smhd])$/);
+    if (!match) return null;
+
+    const value = parseInt(match[1]);
+    const unit = match[2];
+
+    const multipliers = {
+        s: 1000,
+        m: 60000,
+        h: 3600000,
+        d: 86400000
+    };
+
+    return value * multipliers[unit];
+}
+
+// ================= REGISTER GLOBAL COMMANDS =================
 async function registerCommands() {
+
     const commands = [
+
+        new SlashCommandBuilder()
+            .setName('setup')
+            .setDescription('Setup bot for this server')
+            .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+
         new SlashCommandBuilder()
             .setName('ticketpanel')
-            .setDescription('Send the support ticket panel'),
+            .setDescription('Send the ticket panel'),
 
         new SlashCommandBuilder()
             .setName('close')
-            .setDescription('Close your open ticket'),
+            .setDescription('Close your ticket'),
 
         new SlashCommandBuilder()
-            .setName('play')
-            .setDescription('Play a YouTube URL')
+            .setName('suggest')
+            .setDescription('Create a suggestion poll')
             .addStringOption(option =>
-                option.setName('url')
-                    .setDescription('YouTube URL')
-                    .setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName('skip')
-            .setDescription('Skip current song'),
-
-        new SlashCommandBuilder()
-            .setName('stop')
-            .setDescription('Stop music and clear queue')
+                option.setName('text').setDescription('Suggestion').setRequired(true)
+            )
+            .addStringOption(option =>
+                option.setName('time').setDescription('10m, 1h, 1d').setRequired(true)
+            )
 
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
 
     await rest.put(
-        Routes.applicationGuildCommands(clientId, guildId),
+        Routes.applicationCommands(clientId),
         { body: commands }
     );
 
-    console.log("Slash commands registered.");
+    console.log("🌍 Global slash commands registered.");
 }
 
 client.once('clientReady', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ================= MUSIC LOGIC =================
-async function playSong(guild, song) {
-    const queue = musicQueues.get(guild.id);
-    if (!song) {
-        queue.connection.destroy();
-        musicQueues.delete(guild.id);
-        return;
-    }
-
-    const stream = await play.stream(song.url);
-    const resource = createAudioResource(stream.stream, {
-        inputType: stream.type
-    });
-
-    queue.player.play(resource);
+// ================= FIND USER TICKET =================
+function findUserTicket(guild, userId) {
+    return guild.channels.cache.find(channel =>
+        channel.parent &&
+        channel.parent.name === "Tickets" &&
+        channel.permissionOverwrites.cache.has(userId)
+    );
 }
 
+// ================= INTERACTIONS =================
 client.on(Events.InteractionCreate, async interaction => {
+
     try {
 
-        if (!interaction.isChatInputCommand()) return;
+        if (!interaction.inGuild()) return;
 
-        // ================= MUSIC COMMANDS =================
+        const config = await getGuildConfig(interaction.guild.id);
 
-        if (interaction.commandName === 'play') {
+        // ================= SLASH COMMANDS =================
+        if (interaction.isChatInputCommand()) {
 
-            const url = interaction.options.getString('url');
-            const voiceChannel = interaction.member.voice.channel;
+            // ===== SETUP =====
+            if (interaction.commandName === 'setup') {
 
-            if (!voiceChannel) {
+                const embed = new EmbedBuilder()
+                    .setTitle("⚙️ Bot Setup")
+                    .setDescription("Enable features and set staff role.")
+                    .setColor(0x5865F2);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId("enable_tickets")
+                        .setLabel("🎟 Toggle Tickets")
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId("enable_suggestions")
+                        .setLabel("📢 Toggle Suggestions")
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId("set_staff_role")
+                        .setLabel("👮 Set Staff Role")
+                        .setStyle(ButtonStyle.Success)
+                );
+
+                return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+            }
+
+            // ===== TICKET PANEL =====
+            if (interaction.commandName === 'ticketpanel') {
+
+                if (!config.ticketsEnabled)
+                    return interaction.reply({ content: "❌ Tickets not enabled.", ephemeral: true });
+
+                if (!config.staffRoleId)
+                    return interaction.reply({ content: "❌ Staff role not set. Use /setup.", ephemeral: true });
+
+                if (findUserTicket(interaction.guild, interaction.user.id))
+                    return interaction.reply({ content: "❌ You already have a ticket.", ephemeral: true });
+
+                const embed = new EmbedBuilder()
+                    .setTitle("🎟 Open a Ticket")
+                    .setDescription("Choose a type.")
+                    .setColor(0x5865F2);
+
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId("ticket_type")
+                    .addOptions([
+                        { label: "Minecraft Help", value: "minecraft" },
+                        { label: "Suggestion", value: "suggestion" },
+                        { label: "Need Help", value: "help" },
+                        { label: "YouTube Collab", value: "youtube" }
+                    ]);
+
                 return interaction.reply({
-                    content: "❌ You must be in a voice channel.",
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(select)]
+                });
+            }
+
+            // ===== CLOSE =====
+            if (interaction.commandName === 'close') {
+
+                const ticket = findUserTicket(interaction.guild, interaction.user.id);
+                if (!ticket)
+                    return interaction.reply({ content: "❌ No open ticket.", ephemeral: true });
+
+                await interaction.reply("🔒 Closing in 5 seconds...");
+                setTimeout(() => ticket.delete().catch(() => {}), 5000);
+                return;
+            }
+
+            // ===== SUGGEST =====
+            if (interaction.commandName === 'suggest') {
+
+                if (!config.suggestionsEnabled)
+                    return interaction.reply({ content: "❌ Suggestions not enabled.", ephemeral: true });
+
+                const text = interaction.options.getString('text');
+                const duration = parseTime(interaction.options.getString('time'));
+
+                if (!duration)
+                    return interaction.reply({ content: "❌ Invalid time format.", ephemeral: true });
+
+                const embed = new EmbedBuilder()
+                    .setTitle("📢 New Suggestion")
+                    .setDescription(text)
+                    .addFields(
+                        { name: "👍 Yes", value: "0", inline: true },
+                        { name: "👎 No", value: "0", inline: true }
+                    )
+                    .setColor(0x5865F2);
+
+                const yes = new ButtonBuilder().setCustomId("vote_yes").setLabel("👍 Yes").setStyle(ButtonStyle.Success);
+                const no = new ButtonBuilder().setCustomId("vote_no").setLabel("👎 No").setStyle(ButtonStyle.Danger);
+
+                const message = await interaction.reply({
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(yes, no)],
+                    fetchReply: true
+                });
+
+                activePolls.set(message.id, { yes: new Set(), no: new Set() });
+
+                setTimeout(async () => {
+                    const poll = activePolls.get(message.id);
+                    if (!poll) return;
+
+                    const finalEmbed = new EmbedBuilder()
+                        .setTitle("📊 Poll Ended")
+                        .setDescription(text)
+                        .addFields(
+                            { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
+                            { name: "👎 No", value: `${poll.no.size}`, inline: true }
+                        )
+                        .setColor(0x00FF99);
+
+                    await message.edit({
+                        embeds: [finalEmbed],
+                        components: [new ActionRowBuilder().addComponents(
+                            ButtonBuilder.from(yes).setDisabled(true),
+                            ButtonBuilder.from(no).setDisabled(true)
+                        )]
+                    });
+
+                    activePolls.delete(message.id);
+
+                }, duration);
+
+                return;
+            }
+        }
+
+        // ================= BUTTONS =================
+        if (interaction.isButton()) {
+
+            // Setup Buttons
+            if (interaction.customId === "enable_tickets") {
+                await updateGuildConfig(interaction.guild.id, { ticketsEnabled: !config.ticketsEnabled });
+                return interaction.reply({ content: `🎟 Tickets toggled!`, ephemeral: true });
+            }
+
+            if (interaction.customId === "enable_suggestions") {
+                await updateGuildConfig(interaction.guild.id, { suggestionsEnabled: !config.suggestionsEnabled });
+                return interaction.reply({ content: `📢 Suggestions toggled!`, ephemeral: true });
+            }
+
+            if (interaction.customId === "set_staff_role") {
+                const select = new RoleSelectMenuBuilder()
+                    .setCustomId("staff_role_select")
+                    .setPlaceholder("Select staff role")
+                    .setMinValues(1)
+                    .setMaxValues(1);
+
+                return interaction.reply({
+                    content: "Select the staff role:",
+                    components: [new ActionRowBuilder().addComponents(select)],
                     ephemeral: true
                 });
             }
 
-            await interaction.deferReply();
+            // Voting
+            const poll = activePolls.get(interaction.message.id);
+            if (!poll) return;
 
-            const songInfo = await play.video_info(url).catch(() => null);
-
-            if (!songInfo) {
-                return interaction.editReply("❌ Invalid YouTube URL.");
+            if (interaction.customId === "vote_yes") {
+                poll.no.delete(interaction.user.id);
+                poll.yes.add(interaction.user.id);
             }
 
-            const song = {
-                title: songInfo.video_details.title,
-                url: url
-            };
-
-            let queue = musicQueues.get(interaction.guild.id);
-
-            if (!queue) {
-                const player = createAudioPlayer();
-                const connection = joinVoiceChannel({
-                    channelId: voiceChannel.id,
-                    guildId: interaction.guild.id,
-                    adapterCreator: interaction.guild.voiceAdapterCreator
-                });
-
-                queue = {
-                    songs: [],
-                    connection: connection,
-                    player: player
-                };
-
-                musicQueues.set(interaction.guild.id, queue);
-
-                connection.subscribe(player);
-
-                player.on(AudioPlayerStatus.Idle, () => {
-                    queue.songs.shift();
-                    playSong(interaction.guild, queue.songs[0]);
-                });
-
-                player.on('error', error => {
-                    console.error(error);
-                    queue.songs.shift();
-                    playSong(interaction.guild, queue.songs[0]);
-                });
+            if (interaction.customId === "vote_no") {
+                poll.yes.delete(interaction.user.id);
+                poll.no.add(interaction.user.id);
             }
 
-            queue.songs.push(song);
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setFields(
+                    { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
+                    { name: "👎 No", value: `${poll.no.size}`, inline: true }
+                );
 
-            if (queue.songs.length === 1) {
-                playSong(interaction.guild, queue.songs[0]);
-            }
-
-            return interaction.editReply(`🎵 Added to queue: **${song.title}**`);
+            await interaction.update({ embeds: [updatedEmbed] });
         }
 
-        if (interaction.commandName === 'skip') {
-
-            const queue = musicQueues.get(interaction.guild.id);
-            if (!queue) return interaction.reply("❌ Nothing playing.");
-
-            queue.player.stop();
-            return interaction.reply("⏭ Skipped.");
-        }
-
-        if (interaction.commandName === 'stop') {
-
-            const queue = musicQueues.get(interaction.guild.id);
-            if (!queue) return interaction.reply("❌ Nothing playing.");
-
-            queue.songs = [];
-            queue.player.stop();
-            queue.connection.destroy();
-            musicQueues.delete(interaction.guild.id);
-
-            return interaction.reply("🛑 Stopped and cleared queue.");
-        }
-
-        // ================= TICKET COMMANDS =================
-        if (interaction.commandName === 'ticketpanel') {
-            return interaction.reply("🎟 Ticket system still active.");
-        }
-
-        if (interaction.commandName === 'close') {
-            return interaction.reply("Ticket close logic here.");
+        // ================= ROLE SELECT =================
+        if (interaction.isRoleSelectMenu()) {
+            const roleId = interaction.values[0];
+            await updateGuildConfig(interaction.guild.id, { staffRoleId: roleId });
+            return interaction.reply({ content: "👮 Staff role saved!", ephemeral: true });
         }
 
     } catch (err) {
         console.error(err);
-        if (!interaction.replied && !interaction.deferred) {
-            interaction.reply({ content: "❌ Error occurred.", ephemeral: true }).catch(() => {});
-        }
     }
 });
 
