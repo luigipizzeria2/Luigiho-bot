@@ -34,9 +34,8 @@ const client = new Client({
 });
 
 let database;
-let openTickets = new Map();
 
-// ===== DATABASE =====
+// ================= DATABASE =================
 async function connectDB() {
     const mongo = new MongoClient(mongoURI);
     await mongo.connect();
@@ -53,80 +52,116 @@ async function incrementTicketCount() {
     return result.value.value;
 }
 
-// ===== REGISTER SLASH COMMAND =====
+// ================= REGISTER COMMANDS =================
 async function registerCommands() {
     const commands = [
         new SlashCommandBuilder()
             .setName('ticketpanel')
-            .setDescription('Send the support ticket panel')
+            .setDescription('Send the support ticket panel'),
+
+        new SlashCommandBuilder()
+            .setName('close')
+            .setDescription('Close your open ticket')
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
+
     await rest.put(
         Routes.applicationGuildCommands(clientId, guildId),
         { body: commands }
     );
+
     console.log("Slash commands registered.");
 }
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ===== INTERACTIONS =====
+// ================= HELPER: FIND USER TICKET =================
+function findUserTicket(guild, userId) {
+    return guild.channels.cache.find(channel =>
+        channel.parent &&
+        channel.parent.name === "Tickets" &&
+        channel.permissionOverwrites.cache.has(userId)
+    );
+}
+
+// ================= INTERACTIONS =================
 client.on(Events.InteractionCreate, async interaction => {
 
-    // ===== SLASH COMMAND =====
-    if (interaction.isChatInputCommand()) {
+    try {
 
-        if (interaction.commandName === 'ticketpanel') {
+        if (interaction.isChatInputCommand()) {
 
-            const embed = new EmbedBuilder()
-                .setTitle("🎟 Open a Ticket")
-                .setDescription("Select the type of ticket below.")
-                .setColor(0x5865F2);
+            // ---- /ticketpanel ----
+            if (interaction.commandName === 'ticketpanel') {
 
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId("select_ticket_type")
-                .setPlaceholder("Choose a ticket type")
-                .addOptions([
-                    {
-                        label: "Minecraft Server Help",
-                        value: "minecraft",
-                        emoji: "🎮"
-                    },
-                    {
-                        label: "Suggestion",
-                        value: "suggestion",
-                        emoji: "💡"
-                    },
-                    {
-                        label: "Need Help",
-                        value: "help",
-                        emoji: "❓"
-                    },
-                    {
-                        label: "YouTube Collab",
-                        value: "youtube",
-                        emoji: "🎥"
-                    }
-                ]);
+                const existingTicket = findUserTicket(interaction.guild, interaction.user.id);
 
-            const row = new ActionRowBuilder().addComponents(selectMenu);
+                if (existingTicket) {
+                    return interaction.reply({
+                        content: "❌ You already have an open ticket.",
+                        ephemeral: true
+                    });
+                }
 
-            await interaction.reply({
-                embeds: [embed],
-                components: [row]
-            });
+                const embed = new EmbedBuilder()
+                    .setTitle("🎟 Open a Ticket")
+                    .setDescription("Select the type of ticket below.")
+                    .setColor(0x5865F2);
+
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId("select_ticket_type")
+                    .setPlaceholder("Choose a ticket type")
+                    .addOptions([
+                        { label: "Minecraft Server Help", value: "minecraft", emoji: "🎮" },
+                        { label: "Suggestion", value: "suggestion", emoji: "💡" },
+                        { label: "Need Help", value: "help", emoji: "❓" },
+                        { label: "YouTube Collab", value: "youtube", emoji: "🎥" }
+                    ]);
+
+                const row = new ActionRowBuilder().addComponents(selectMenu);
+
+                return interaction.reply({
+                    embeds: [embed],
+                    components: [row]
+                });
+            }
+
+            // ---- /close ----
+            if (interaction.commandName === 'close') {
+
+                await interaction.deferReply({ ephemeral: true });
+
+                const ticketChannel = findUserTicket(interaction.guild, interaction.user.id);
+
+                if (!ticketChannel) {
+                    return interaction.editReply({
+                        content: "❌ You do not have an open ticket."
+                    });
+                }
+
+                await interaction.editReply({
+                    content: `🔒 Closing your ticket: ${ticketChannel} in 5 seconds...`
+                });
+
+                setTimeout(() => {
+                    ticketChannel.delete().catch(() => {});
+                }, 5000);
+
+                return;
+            }
         }
-    }
 
-    // ===== SELECT MENU =====
-    if (interaction.isStringSelectMenu()) {
+        // ===== SELECT MENU =====
+        if (interaction.isStringSelectMenu()) {
 
-        if (interaction.customId === "select_ticket_type") {
+            if (interaction.customId !== "select_ticket_type") return;
 
-            if (openTickets.has(interaction.user.id)) {
+            const existingTicket = findUserTicket(interaction.guild, interaction.user.id);
+
+            if (existingTicket) {
                 return interaction.reply({
                     content: "❌ You already have an open ticket.",
                     ephemeral: true
@@ -160,23 +195,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 ]
             });
 
-            openTickets.set(interaction.user.id, channel.id);
-
             const closeButton = new ButtonBuilder()
                 .setCustomId("close_ticket")
                 .setLabel("Close Ticket")
                 .setStyle(ButtonStyle.Danger);
 
-            const claimButton = new ButtonBuilder()
-                .setCustomId("claim_ticket")
-                .setLabel("Claim Ticket")
-                .setStyle(ButtonStyle.Success);
-
-            const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
+            const row = new ActionRowBuilder().addComponents(closeButton);
 
             const embed = new EmbedBuilder()
                 .setTitle(`🎟 Ticket #${count}`)
-                .setDescription(`Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`)
+                .setDescription(`Type: **${type}**\nOpened by: ${interaction.user}`)
                 .setColor(0x00FF99);
 
             await channel.send({
@@ -186,54 +214,20 @@ client.on(Events.InteractionCreate, async interaction => {
                 allowedMentions: { roles: [staffRoleId] }
             });
 
-            await interaction.editReply({
+            return interaction.editReply({
                 content: `✅ Ticket created: ${channel}`
             });
         }
-    }
 
-    // ===== CLAIM SYSTEM =====
-    if (interaction.isButton() && interaction.customId === "claim_ticket") {
-
-        if (!interaction.member.roles.cache.has(staffRoleId)) {
-            return interaction.reply({
-                content: "❌ Only staff can claim tickets.",
-                ephemeral: true
-            });
+    } catch (err) {
+        console.error(err);
+        if (!interaction.replied && !interaction.deferred) {
+            interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
         }
-
-        const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-
-        if (embed.data.description.includes("Not claimed")) {
-
-            embed.setDescription(
-                embed.data.description.replace(
-                    "❌ Not claimed",
-                    `${interaction.user}`
-                )
-            );
-
-            await interaction.update({ embeds: [embed] });
-
-        } else {
-            await interaction.reply({
-                content: "❌ Already claimed.",
-                ephemeral: true
-            });
-        }
-    }
-
-    // ===== CLOSE =====
-    if (interaction.isButton() && interaction.customId === "close_ticket") {
-
-        await interaction.reply("🔒 Closing in 5 seconds...");
-
-        setTimeout(() => {
-            interaction.channel.delete().catch(console.error);
-        }, 5000);
     }
 });
 
+// ================= START =================
 (async () => {
     await connectDB();
     await registerCommands();
