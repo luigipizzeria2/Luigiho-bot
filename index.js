@@ -2,7 +2,86 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 
-app.get('/', (req, res) => res.send('Bot is running'));
+app.get('/', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Luigiho Bot</title>
+        <style>
+            body {
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background: #0f172a;
+                color: white;
+                text-align: center;
+            }
+            .container {
+                padding: 100px 20px;
+            }
+            h1 {
+                font-size: 50px;
+                margin-bottom: 10px;
+            }
+            p {
+                font-size: 20px;
+                color: #cbd5e1;
+            }
+            .btn {
+                margin-top: 30px;
+                padding: 15px 30px;
+                font-size: 18px;
+                background: #5865F2;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+                transition: 0.2s;
+            }
+            .btn:hover {
+                background: #4752C4;
+            }
+            .features {
+                margin-top: 60px;
+            }
+            .feature {
+                margin: 20px 0;
+                font-size: 18px;
+            }
+            footer {
+                margin-top: 100px;
+                color: #64748b;
+                font-size: 14px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Luigiho Bot</h1>
+            <p>Multi-Server Ticket & Suggestion System</p>
+
+            <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=27664&integration_type=0&scope=bot+applications.commands" target="_blank">
+                Add to Discord
+            </a>
+
+            <div class="features">
+                <div class="feature">🎟 Advanced Ticket System</div>
+                <div class="feature">📢 Smart Suggestion Polls</div>
+                <div class="feature">⚙️ Per-Server Setup</div>
+                <div class="feature">🌍 Multi-Server Support</div>
+            </div>
+
+            <footer>
+                © ${new Date().getFullYear()} Luigiho Bot
+            </footer>
+        </div>
+    </body>
+    </html>
+    `);
+});
+
 app.listen(3000, () => console.log('Web server running'));
 
 const {
