@@ -316,9 +316,6 @@ app.get("/api/status", (req, res) => {
     });
 });
 
-app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
-    console.log("🌐 Web server running");
-});
 
 // ================= START =================
 
@@ -326,4 +323,9 @@ app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
     await connectDB();
     await registerCommands();
     await client.login(token);
+
+    app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
+        console.log("🌐 Web server running");
+    });
+
 })();
