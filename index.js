@@ -1,224 +1,64 @@
-require('dotenv').config();
-const express = require('express');
-const app = express();
-
-// ================= WEBSITE =================
-
-app.get('/', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Luigiho Bot</title>
-        <style>
-            body {
-                margin: 0;
-                font-family: Arial, sans-serif;
-                background: #0f172a;
-                color: white;
-                text-align: center;
-            }
-            .container {
-                padding: 100px 20px;
-            }
-            h1 {
-                font-size: 50px;
-            }
-            .status {
-                margin-top: 10px;
-                font-size: 18px;
-            }
-            .dot {
-                height: 12px;
-                width: 12px;
-                border-radius: 50%;
-                display: inline-block;
-                margin-right: 6px;
-            }
-            .btn {
-                margin: 15px;
-                padding: 15px 30px;
-                font-size: 18px;
-                background: #5865F2;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-block;
-            }
-            .btn-secondary {
-                background: #334155;
-            }
-            footer {
-                margin-top: 80px;
-                color: #64748b;
-                font-size: 14px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Luigiho Bot</h1>
-            <p>Multi-Server Ticket & Suggestion System</p>
-
-            <div class="status" id="status">
-                <span class="dot" id="dot"></span>
-                <span id="statusText">Checking status...</span>
-            </div>
-
-            <div>
-                <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=27664&integration_type=0&scope=bot+applications.commands" target="_blank">Add to Discord</a>
-                <a class="btn btn-secondary" href="/commands">Commands</a>
-                <a class="btn btn-secondary" href="YOUR_SUPPORT_SERVER_LINK" target="_blank">Support Server</a>
-            </div>
-
-            <footer>
-                © ${new Date().getFullYear()} Luigiho Bot
-            </footer>
-        </div>
-
-        <script>
-            fetch('/api/status')
-                .then(res => res.json())
-                .then(data => {
-                    const dot = document.getElementById('dot');
-                    const text = document.getElementById('statusText');
-
-                    if (data.online) {
-                        dot.style.background = "#22c55e";
-                        text.innerText = "Online • Serving " + data.servers + " servers";
-                    } else {
-                        dot.style.background = "#ef4444";
-                        text.innerText = "Offline";
-                    }
-                })
-                .catch(() => {
-                    document.getElementById('statusText').innerText = "Status unavailable";
-                });
-        </script>
-    </body>
-    </html>
-    `);
-});
-
-// ================= COMMANDS PAGE =================
-
-app.get('/commands', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Commands - Luigiho Bot</title>
-        <style>
-            body {
-                background: #0f172a;
-                color: white;
-                font-family: Arial;
-                padding: 50px;
-            }
-            h1 {
-                text-align: center;
-            }
-            .cmd {
-                margin: 20px auto;
-                max-width: 600px;
-                background: #1e293b;
-                padding: 20px;
-                border-radius: 10px;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Commands</h1>
-
-        <div class="cmd"><b>/setup</b><br>Configure bot for your server</div>
-        <div class="cmd"><b>/ticketpanel</b><br>Send ticket panel</div>
-        <div class="cmd"><b>/close</b><br>Close your ticket</div>
-        <div class="cmd"><b>/suggest</b><br>Create suggestion poll</div>
-
-        <p style="text-align:center;margin-top:40px;">
-            <a href="/" style="color:#5865F2;">← Back to Home</a>
-        </p>
-    </body>
-    </html>
-    `);
-});
-
-// ================= API STATUS =================
-
-app.get('/api/status', (req, res) => {
-    res.json({
-        online: client.isReady(),
-        servers: client.guilds.cache.size
-    });
-});
-
-
-app.listen(process.env.PORT || 3000, () => console.log("Web server running"));
+require("dotenv").config();
 
 const {
     Client,
     GatewayIntentBits,
-    PermissionsBitField,
+    SlashCommandBuilder,
+    REST,
+    Routes,
+    EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder,
-    Events,
-    REST,
-    Routes,
-    SlashCommandBuilder,
     ChannelType,
-    StringSelectMenuBuilder,
-    RoleSelectMenuBuilder
-} = require('discord.js');
+    PermissionFlagsBits
+} = require("discord.js");
 
-const { MongoClient } = require('mongodb');
+const { MongoClient } = require("mongodb");
+const express = require("express");
 
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
-const mongoURI = process.env.MONGO_URI;
+const mongoUri = process.env.MONGO_URI;
+
+if (!token || !clientId || !mongoUri) {
+    console.error("❌ Missing values in .env file.");
+    process.exit(1);
+}
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
+const app = express();
 let database;
-const activePolls = new Map();
 
 // ================= DATABASE =================
+
 async function connectDB() {
-    const mongo = new MongoClient(mongoURI);
+    const mongo = new MongoClient(mongoUri);
     await mongo.connect();
-    database = mongo.db("multiBot");
+    database = mongo.db("luigihoBot");
     console.log("✅ Connected to MongoDB");
 }
 
 async function getGuildConfig(guildId) {
-    let config = await database.collection("guildConfigs").findOne({ guildId });
-    if (!config) {
-        config = {
-            guildId,
-            ticketsEnabled: false,
-            suggestionsEnabled: false,
-            staffRoleId: null
-        };
-        await database.collection("guildConfigs").insertOne(config);
-    }
-    return config;
+    return await database.collection("configs").findOne({ guildId });
 }
 
-async function updateGuildConfig(guildId, update) {
-    await database.collection("guildConfigs").updateOne(
+async function updateGuildConfig(guildId, data) {
+    await database.collection("configs").updateOne(
         { guildId },
-        { $set: update },
+        { $set: data },
         { upsert: true }
     );
 }
 
 async function incrementTicketCount(guildId) {
-    const result = await database.collection("ticketCounters").findOneAndUpdate(
+    const result = await database.collection("counters").findOneAndUpdate(
         { guildId },
         { $inc: { value: 1 } },
         { upsert: true, returnDocument: "after" }
@@ -226,55 +66,40 @@ async function incrementTicketCount(guildId) {
     return result.value.value;
 }
 
-// ================= TIME PARSER =================
-function parseTime(input) {
-    const match = input.match(/^(\d+)([smhd])$/);
-    if (!match) return null;
+// ================= SLASH COMMANDS =================
 
-    const value = parseInt(match[1]);
-    const unit = match[2];
-
-    const multipliers = {
-        s: 1000,
-        m: 60000,
-        h: 3600000,
-        d: 86400000
-    };
-
-    return value * multipliers[unit];
-}
-
-// ================= REGISTER GLOBAL COMMANDS =================
 async function registerCommands() {
-
     const commands = [
 
         new SlashCommandBuilder()
-            .setName('setup')
-            .setDescription('Setup bot for this server')
-            .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+            .setName("setup")
+            .setDescription("Configure bot for this server"),
 
         new SlashCommandBuilder()
-            .setName('ticketpanel')
-            .setDescription('Send the ticket panel'),
+            .setName("ticketpanel")
+            .setDescription("Send the ticket panel"),
 
         new SlashCommandBuilder()
-            .setName('close')
-            .setDescription('Close your ticket'),
+            .setName("close")
+            .setDescription("Close your open ticket"),
 
         new SlashCommandBuilder()
-            .setName('suggest')
-            .setDescription('Create a suggestion poll')
-            .addStringOption(option =>
-                option.setName('text').setDescription('Suggestion').setRequired(true)
+            .setName("suggest")
+            .setDescription("Create a suggestion poll")
+            .addStringOption(opt =>
+                opt.setName("text")
+                    .setDescription("Suggestion text")
+                    .setRequired(true)
             )
-            .addStringOption(option =>
-                option.setName('time').setDescription('10m, 1h, 1d').setRequired(true)
+            .addStringOption(opt =>
+                opt.setName("time")
+                    .setDescription("Time (10m, 1h, 1d)")
+                    .setRequired(true)
             )
 
-    ].map(cmd => cmd.toJSON());
+    ].map(c => c.toJSON());
 
-    const rest = new REST({ version: '10' }).setToken(token);
+    const rest = new REST({ version: "10" }).setToken(token);
 
     await rest.put(
         Routes.applicationCommands(clientId),
@@ -284,226 +109,219 @@ async function registerCommands() {
     console.log("🌍 Global slash commands registered.");
 }
 
-client.once('clientReady', () => {
+// ================= BOT EVENTS =================
+
+client.once("clientReady", () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ================= FIND USER TICKET =================
-function findUserTicket(guild, userId) {
-    return guild.channels.cache.find(channel =>
-        channel.parent &&
-        channel.parent.name === "Tickets" &&
-        channel.permissionOverwrites.cache.has(userId)
-    );
-}
+client.on("interactionCreate", async interaction => {
+    if (interaction.isChatInputCommand()) {
 
-// ================= INTERACTIONS =================
-client.on(Events.InteractionCreate, async interaction => {
+        const guildId = interaction.guild.id;
+        const config = await getGuildConfig(guildId) || {};
 
-    try {
+        // SETUP
+        if (interaction.commandName === "setup") {
+            const embed = new EmbedBuilder()
+                .setTitle("⚙️ Server Setup")
+                .setDescription("Toggle features and set staff role.")
+                .setColor(0x5865F2);
 
-        if (!interaction.inGuild()) return;
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("toggle_tickets")
+                    .setLabel("🎟 Toggle Tickets")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("toggle_suggestions")
+                    .setLabel("📢 Toggle Suggestions")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("set_staff")
+                    .setLabel("👮 Set Staff Role")
+                    .setStyle(ButtonStyle.Secondary)
+            );
 
-        const config = await getGuildConfig(interaction.guild.id);
-
-        // ================= SLASH COMMANDS =================
-        if (interaction.isChatInputCommand()) {
-
-            // ===== SETUP =====
-            if (interaction.commandName === 'setup') {
-
-                const embed = new EmbedBuilder()
-                    .setTitle("⚙️ Bot Setup")
-                    .setDescription("Enable features and set staff role.")
-                    .setColor(0x5865F2);
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId("enable_tickets")
-                        .setLabel("🎟 Toggle Tickets")
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId("enable_suggestions")
-                        .setLabel("📢 Toggle Suggestions")
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId("set_staff_role")
-                        .setLabel("👮 Set Staff Role")
-                        .setStyle(ButtonStyle.Success)
-                );
-
-                return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-            }
-
-            // ===== TICKET PANEL =====
-            if (interaction.commandName === 'ticketpanel') {
-
-                if (!config.ticketsEnabled)
-                    return interaction.reply({ content: "❌ Tickets not enabled.", ephemeral: true });
-
-                if (!config.staffRoleId)
-                    return interaction.reply({ content: "❌ Staff role not set. Use /setup.", ephemeral: true });
-
-                if (findUserTicket(interaction.guild, interaction.user.id))
-                    return interaction.reply({ content: "❌ You already have a ticket.", ephemeral: true });
-
-                const embed = new EmbedBuilder()
-                    .setTitle("🎟 Open a Ticket")
-                    .setDescription("Choose a type.")
-                    .setColor(0x5865F2);
-
-                const select = new StringSelectMenuBuilder()
-                    .setCustomId("ticket_type")
-                    .addOptions([
-                        { label: "Minecraft Help", value: "minecraft" },
-                        { label: "Suggestion", value: "suggestion" },
-                        { label: "Need Help", value: "help" },
-                        { label: "YouTube Collab", value: "youtube" }
-                    ]);
-
-                return interaction.reply({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(select)]
-                });
-            }
-
-            // ===== CLOSE =====
-            if (interaction.commandName === 'close') {
-
-                const ticket = findUserTicket(interaction.guild, interaction.user.id);
-                if (!ticket)
-                    return interaction.reply({ content: "❌ No open ticket.", ephemeral: true });
-
-                await interaction.reply("🔒 Closing in 5 seconds...");
-                setTimeout(() => ticket.delete().catch(() => {}), 5000);
-                return;
-            }
-
-            // ===== SUGGEST =====
-            if (interaction.commandName === 'suggest') {
-
-                if (!config.suggestionsEnabled)
-                    return interaction.reply({ content: "❌ Suggestions not enabled.", ephemeral: true });
-
-                const text = interaction.options.getString('text');
-                const duration = parseTime(interaction.options.getString('time'));
-
-                if (!duration)
-                    return interaction.reply({ content: "❌ Invalid time format.", ephemeral: true });
-
-                const embed = new EmbedBuilder()
-                    .setTitle("📢 New Suggestion")
-                    .setDescription(text)
-                    .addFields(
-                        { name: "👍 Yes", value: "0", inline: true },
-                        { name: "👎 No", value: "0", inline: true }
-                    )
-                    .setColor(0x5865F2);
-
-                const yes = new ButtonBuilder().setCustomId("vote_yes").setLabel("👍 Yes").setStyle(ButtonStyle.Success);
-                const no = new ButtonBuilder().setCustomId("vote_no").setLabel("👎 No").setStyle(ButtonStyle.Danger);
-
-                const message = await interaction.reply({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(yes, no)],
-                    fetchReply: true
-                });
-
-                activePolls.set(message.id, { yes: new Set(), no: new Set() });
-
-                setTimeout(async () => {
-                    const poll = activePolls.get(message.id);
-                    if (!poll) return;
-
-                    const finalEmbed = new EmbedBuilder()
-                        .setTitle("📊 Poll Ended")
-                        .setDescription(text)
-                        .addFields(
-                            { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                            { name: "👎 No", value: `${poll.no.size}`, inline: true }
-                        )
-                        .setColor(0x00FF99);
-
-                    await message.edit({
-                        embeds: [finalEmbed],
-                        components: [new ActionRowBuilder().addComponents(
-                            ButtonBuilder.from(yes).setDisabled(true),
-                            ButtonBuilder.from(no).setDisabled(true)
-                        )]
-                    });
-
-                    activePolls.delete(message.id);
-
-                }, duration);
-
-                return;
-            }
+            return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         }
 
-        // ================= BUTTONS =================
-        if (interaction.isButton()) {
+        // TICKET PANEL
+        if (interaction.commandName === "ticketpanel") {
 
-            // Setup Buttons
-            if (interaction.customId === "enable_tickets") {
-                await updateGuildConfig(interaction.guild.id, { ticketsEnabled: !config.ticketsEnabled });
-                return interaction.reply({ content: `🎟 Tickets toggled!`, ephemeral: true });
-            }
+            if (!config.ticketsEnabled)
+                return interaction.reply({ content: "❌ Tickets are disabled.", ephemeral: true });
 
-            if (interaction.customId === "enable_suggestions") {
-                await updateGuildConfig(interaction.guild.id, { suggestionsEnabled: !config.suggestionsEnabled });
-                return interaction.reply({ content: `📢 Suggestions toggled!`, ephemeral: true });
-            }
+            const embed = new EmbedBuilder()
+                .setTitle("🎟 Open a Ticket")
+                .setDescription("Click below to open a ticket.")
+                .setColor(0x5865F2);
 
-            if (interaction.customId === "set_staff_role") {
-                const select = new RoleSelectMenuBuilder()
-                    .setCustomId("staff_role_select")
-                    .setPlaceholder("Select staff role")
-                    .setMinValues(1)
-                    .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("open_ticket")
+                    .setLabel("Open Ticket")
+                    .setStyle(ButtonStyle.Success)
+            );
 
-                return interaction.reply({
-                    content: "Select the staff role:",
-                    components: [new ActionRowBuilder().addComponents(select)],
-                    ephemeral: true
-                });
-            }
-
-            // Voting
-            const poll = activePolls.get(interaction.message.id);
-            if (!poll) return;
-
-            if (interaction.customId === "vote_yes") {
-                poll.no.delete(interaction.user.id);
-                poll.yes.add(interaction.user.id);
-            }
-
-            if (interaction.customId === "vote_no") {
-                poll.yes.delete(interaction.user.id);
-                poll.no.add(interaction.user.id);
-            }
-
-            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-                .setFields(
-                    { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                    { name: "👎 No", value: `${poll.no.size}`, inline: true }
-                );
-
-            await interaction.update({ embeds: [updatedEmbed] });
+            return interaction.reply({ embeds: [embed], components: [row] });
         }
 
-        // ================= ROLE SELECT =================
-        if (interaction.isRoleSelectMenu()) {
-            const roleId = interaction.values[0];
-            await updateGuildConfig(interaction.guild.id, { staffRoleId: roleId });
-            return interaction.reply({ content: "👮 Staff role saved!", ephemeral: true });
+        // CLOSE COMMAND
+        if (interaction.commandName === "close") {
+
+            const channel = interaction.guild.channels.cache.find(c =>
+                c.name === `ticket-${interaction.user.id}`
+            );
+
+            if (!channel)
+                return interaction.reply({ content: "❌ You do not have an open ticket.", ephemeral: true });
+
+            await channel.delete();
+            return interaction.reply({ content: "✅ Ticket closed.", ephemeral: true });
         }
 
-    } catch (err) {
-        console.error(err);
+        // SUGGEST
+        if (interaction.commandName === "suggest") {
+
+            if (!config.suggestionsEnabled)
+                return interaction.reply({ content: "❌ Suggestions are disabled.", ephemeral: true });
+
+            const text = interaction.options.getString("text");
+            const time = interaction.options.getString("time");
+
+            const embed = new EmbedBuilder()
+                .setTitle("📢 New Suggestion")
+                .setDescription(text)
+                .setColor(0x5865F2)
+                .setFooter({ text: `Ends in ${time}` });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("vote_yes")
+                    .setLabel("👍 Yes")
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId("vote_no")
+                    .setLabel("👎 No")
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            return interaction.reply({ embeds: [embed], components: [row] });
+        }
+    }
+
+    // BUTTONS
+    if (interaction.isButton()) {
+
+        const guildId = interaction.guild.id;
+        const config = await getGuildConfig(guildId) || {};
+
+        // Toggle Tickets
+        if (interaction.customId === "toggle_tickets") {
+            await updateGuildConfig(guildId, { ticketsEnabled: !config.ticketsEnabled });
+            return interaction.reply({ content: `Tickets: ${!config.ticketsEnabled ? "Enabled" : "Disabled"}`, ephemeral: true });
+        }
+
+        // Toggle Suggestions
+        if (interaction.customId === "toggle_suggestions") {
+            await updateGuildConfig(guildId, { suggestionsEnabled: !config.suggestionsEnabled });
+            return interaction.reply({ content: `Suggestions: ${!config.suggestionsEnabled ? "Enabled" : "Disabled"}`, ephemeral: true });
+        }
+
+        // Set Staff Role
+        if (interaction.customId === "set_staff") {
+            await interaction.reply({ content: "Mention the staff role now.", ephemeral: true });
+        }
+
+        // Open Ticket
+        if (interaction.customId === "open_ticket") {
+
+            const existing = interaction.guild.channels.cache.find(c =>
+                c.name === `ticket-${interaction.user.id}`
+            );
+
+            if (existing)
+                return interaction.reply({ content: "❌ You already have an open ticket.", ephemeral: true });
+
+            const count = await incrementTicketCount(guildId);
+
+            const category = await interaction.guild.channels.create({
+                name: `ticket-${interaction.user.id}`,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    {
+                        id: interaction.guild.roles.everyone,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel]
+                    }
+                ]
+            });
+
+            return interaction.reply({ content: `✅ Ticket created: ${category}`, ephemeral: true });
+        }
     }
 });
 
+// ================= WEBSITE =================
+
+app.get("/", (req, res) => {
+    res.send(`
+    <html>
+    <head>
+    <title>Luigiho Bot</title>
+    <style>
+    body { background:#0f172a; color:white; font-family:Arial; text-align:center; padding:100px; }
+    .btn { padding:15px 30px; background:#5865F2; color:white; text-decoration:none; border-radius:8px; margin:10px; display:inline-block; }
+    .status { margin:20px; }
+    </style>
+    </head>
+    <body>
+    <h1>Luigiho Bot</h1>
+    <div class="status" id="status">Checking status...</div>
+    <a class="btn" href="YOUR_INVITE_LINK" target="_blank">Add to Discord</a>
+    <a class="btn" href="/commands">Commands</a>
+    <a class="btn" href="YOUR_SUPPORT_LINK" target="_blank">Support Server</a>
+    <script>
+    fetch('/api/status').then(r=>r.json()).then(d=>{
+        document.getElementById('status').innerText =
+        d.online ? "🟢 Online • Serving " + d.servers + " servers" : "🔴 Offline";
+    });
+    </script>
+    </body>
+    </html>
+    `);
+});
+
+app.get("/commands", (req, res) => {
+    res.send(`
+    <html><body style="background:#0f172a;color:white;font-family:Arial;padding:50px;">
+    <h1>Commands</h1>
+    <p>/setup</p>
+    <p>/ticketpanel</p>
+    <p>/close</p>
+    <p>/suggest</p>
+    <a href="/">Back</a>
+    </body></html>
+    `);
+});
+
+app.get("/api/status", (req, res) => {
+    res.json({
+        online: client.isReady(),
+        servers: client.guilds.cache.size
+    });
+});
+
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🌐 Web server running");
+});
+
 // ================= START =================
+
 (async () => {
     await connectDB();
     await registerCommands();
