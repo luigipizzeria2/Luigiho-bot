@@ -282,9 +282,9 @@ app.get("/", (req, res) => {
     <body>
     <h1>Luigiho Bot</h1>
     <div class="status" id="status">Checking status...</div>
-    <a class="btn" href="YOUR_INVITE_LINK" target="_blank">Add to Discord</a>
+    <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=27664&integration_type=0&scope=bot+applications.commands" target="_blank">Add to Discord</a>
     <a class="btn" href="/commands">Commands</a>
-    <a class="btn" href="YOUR_SUPPORT_LINK" target="_blank">Support Server</a>
+    <a class="btn" href="https://discord.gg/FmPjQxGHFv" target="_blank">Support Server</a>
     <script>
     fetch('/api/status').then(r=>r.json()).then(d=>{
         document.getElementById('status').innerText =
