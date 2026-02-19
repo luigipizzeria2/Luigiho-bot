@@ -349,8 +349,95 @@ client.on("interactionCreate", async interaction => {
 // ================= WEBSITE =================
 
 app.get("/", (req, res) => {
-    res.send(`<h1>Luigiho Bot</h1>`);
+    res.send(`
+    <html>
+    <head>
+        <title>Luigiho Bot</title>
+        <style>
+            body {
+                background:#0f172a;
+                color:white;
+                font-family:Arial;
+                text-align:center;
+                padding:100px;
+            }
+            .btn {
+                padding:15px 30px;
+                background:#5865F2;
+                color:white;
+                text-decoration:none;
+                border-radius:8px;
+                margin:10px;
+                display:inline-block;
+                font-weight:bold;
+            }
+            .status {
+                margin:20px;
+                font-size:18px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Luigiho Bot</h1>
+
+        <div class="status" id="status">
+            Checking status...
+        </div>
+
+        <a class="btn"
+           href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=8&scope=bot%20applications.commands"
+           target="_blank">
+           Add to Discord
+        </a>
+
+        <a class="btn" href="/commands">
+           Commands
+        </a>
+
+        <a class="btn"
+           href="https://discord.gg/FmPjQxGHFv"
+           target="_blank">
+           Support Server
+        </a>
+
+        <script>
+            fetch('/api/status')
+            .then(r => r.json())
+            .then(d => {
+                document.getElementById('status').innerText =
+                    d.online
+                        ? "🟢 Online • Serving " + d.servers + " servers"
+                        : "🔴 Offline";
+            });
+        </script>
+    </body>
+    </html>
+    `);
 });
+
+app.get("/commands", (req, res) => {
+    res.send(`
+    <html>
+    <body style="background:#0f172a;color:white;font-family:Arial;padding:50px;">
+        <h1>Commands</h1>
+        <p><b>/setup</b> – Configure staff role</p>
+        <p><b>/ticketpanel</b> – Create custom ticket panel</p>
+        <p><b>/close</b> – Close ticket</p>
+        <p><b>/suggest</b> – Create suggestion poll</p>
+        <br>
+        <a href="/" style="color:#5865F2;">Back</a>
+    </body>
+    </html>
+    `);
+});
+
+app.get("/api/status", (req, res) => {
+    res.json({
+        online: client.isReady(),
+        servers: client.guilds.cache.size
+    });
+});
+
 
 app.get("/api/status", (req, res) => {
     res.json({
