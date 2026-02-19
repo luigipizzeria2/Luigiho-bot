@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 
+// ================= WEBSITE =================
+
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -21,14 +23,20 @@ app.get('/', (req, res) => {
             }
             h1 {
                 font-size: 50px;
-                margin-bottom: 10px;
             }
-            p {
-                font-size: 20px;
-                color: #cbd5e1;
+            .status {
+                margin-top: 10px;
+                font-size: 18px;
+            }
+            .dot {
+                height: 12px;
+                width: 12px;
+                border-radius: 50%;
+                display: inline-block;
+                margin-right: 6px;
             }
             .btn {
-                margin-top: 30px;
+                margin: 15px;
                 padding: 15px 30px;
                 font-size: 18px;
                 background: #5865F2;
@@ -38,20 +46,12 @@ app.get('/', (req, res) => {
                 cursor: pointer;
                 text-decoration: none;
                 display: inline-block;
-                transition: 0.2s;
             }
-            .btn:hover {
-                background: #4752C4;
-            }
-            .features {
-                margin-top: 60px;
-            }
-            .feature {
-                margin: 20px 0;
-                font-size: 18px;
+            .btn-secondary {
+                background: #334155;
             }
             footer {
-                margin-top: 100px;
+                margin-top: 80px;
                 color: #64748b;
                 font-size: 14px;
             }
@@ -62,27 +62,100 @@ app.get('/', (req, res) => {
             <h1>Luigiho Bot</h1>
             <p>Multi-Server Ticket & Suggestion System</p>
 
-            <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=27664&integration_type=0&scope=bot+applications.commands" target="_blank">
-                Add to Discord
-            </a>
+            <div class="status" id="status">
+                <span class="dot" id="dot"></span>
+                <span id="statusText">Checking status...</span>
+            </div>
 
-            <div class="features">
-                <div class="feature">🎟 Advanced Ticket System</div>
-                <div class="feature">📢 Smart Suggestion Polls</div>
-                <div class="feature">⚙️ Per-Server Setup</div>
-                <div class="feature">🌍 Multi-Server Support</div>
+            <div>
+                <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=27664&integration_type=0&scope=bot+applications.commands" target="_blank">Add to Discord</a>
+                <a class="btn btn-secondary" href="/commands">Commands</a>
+                <a class="btn btn-secondary" href="YOUR_SUPPORT_SERVER_LINK" target="_blank">Support Server</a>
             </div>
 
             <footer>
                 © ${new Date().getFullYear()} Luigiho Bot
             </footer>
         </div>
+
+        <script>
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    const dot = document.getElementById('dot');
+                    const text = document.getElementById('statusText');
+
+                    if (data.online) {
+                        dot.style.background = "#22c55e";
+                        text.innerText = "Online • Serving " + data.servers + " servers";
+                    } else {
+                        dot.style.background = "#ef4444";
+                        text.innerText = "Offline";
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('statusText').innerText = "Status unavailable";
+                });
+        </script>
     </body>
     </html>
     `);
 });
 
-app.listen(3000, () => console.log('Web server running'));
+// ================= COMMANDS PAGE =================
+
+app.get('/commands', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Commands - Luigiho Bot</title>
+        <style>
+            body {
+                background: #0f172a;
+                color: white;
+                font-family: Arial;
+                padding: 50px;
+            }
+            h1 {
+                text-align: center;
+            }
+            .cmd {
+                margin: 20px auto;
+                max-width: 600px;
+                background: #1e293b;
+                padding: 20px;
+                border-radius: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Commands</h1>
+
+        <div class="cmd"><b>/setup</b><br>Configure bot for your server</div>
+        <div class="cmd"><b>/ticketpanel</b><br>Send ticket panel</div>
+        <div class="cmd"><b>/close</b><br>Close your ticket</div>
+        <div class="cmd"><b>/suggest</b><br>Create suggestion poll</div>
+
+        <p style="text-align:center;margin-top:40px;">
+            <a href="/" style="color:#5865F2;">← Back to Home</a>
+        </p>
+    </body>
+    </html>
+    `);
+});
+
+// ================= API STATUS =================
+
+app.get('/api/status', (req, res) => {
+    res.json({
+        online: client.isReady(),
+        servers: client.guilds.cache.size
+    });
+});
+
+
+app.listen(process.env.PORT || 3000, () => console.log("Web server running"));
 
 const {
     Client,
