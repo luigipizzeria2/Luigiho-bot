@@ -28,10 +28,10 @@ if (!token || !clientId || !mongoUri) {
 
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.Guilds
     ]
 });
+
 
 const app = express();
 let database;
