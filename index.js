@@ -324,8 +324,9 @@ app.get("/api/status", (req, res) => {
     await registerCommands();
     await client.login(token);
 
-    app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
-        console.log("🌐 Web server running");
-    });
+ app.listen(3000, "0.0.0.0", () => {
+    console.log("🌐 Web server running");
+});
+
 
 })();
