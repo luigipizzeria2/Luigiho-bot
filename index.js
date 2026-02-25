@@ -21,8 +21,9 @@ const express = require("express");
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
 const mongoUri = process.env.MONGO_URI;
+const guildId = process.env.GUILD_ID; // IMPORTANT
 
-if (!token || !clientId || !mongoUri) {
+if (!token || !clientId || !mongoUri || !guildId) {
     console.error("❌ Missing values in .env file.");
     process.exit(1);
 }
@@ -44,11 +45,11 @@ async function connectDB() {
     console.log("✅ Connected to MongoDB");
 }
 
-async function getGuildConfig(guildId) {
+async function getConfig(guildId) {
     return await database.collection("configs").findOne({ guildId });
 }
 
-async function updateGuildConfig(guildId, data) {
+async function setConfig(guildId, data) {
     await database.collection("configs").updateOne(
         { guildId },
         { $set: data },
@@ -65,7 +66,7 @@ async function incrementTicketCount(guildId) {
     return result.value.value;
 }
 
-/* ================= TIME PARSER ================= */
+/* ================= TIME ================= */
 
 function parseTime(input) {
     const match = input.match(/^(\d+)([smhd])$/);
@@ -74,17 +75,11 @@ function parseTime(input) {
     const value = parseInt(match[1]);
     const unit = match[2];
 
-    const multipliers = {
-        s: 1000,
-        m: 60000,
-        h: 3600000,
-        d: 86400000
-    };
-
+    const multipliers = { s:1000, m:60000, h:3600000, d:86400000 };
     return value * multipliers[unit];
 }
 
-/* ================= REGISTER COMMANDS ================= */
+/* ================= REGISTER COMMANDS (GUILD) ================= */
 
 async function registerCommands() {
 
@@ -92,19 +87,19 @@ async function registerCommands() {
 
         new SlashCommandBuilder()
             .setName("setup")
-            .setDescription("Configure bot for this server")
+            .setDescription("Setup staff role")
             .addRoleOption(opt =>
                 opt.setName("staff")
-                    .setDescription("Select staff role")
+                    .setDescription("Staff role")
                     .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("ticketpanel")
-            .setDescription("Create a custom ticket panel")
+            .setDescription("Create ticket panel")
             .addStringOption(opt =>
                 opt.setName("types")
-                    .setDescription("Separate types with ; (Support; Ideas; Help)")
+                    .setDescription("Support; Ideas; Help")
                     .setRequired(true)
             ),
 
@@ -114,7 +109,7 @@ async function registerCommands() {
 
         new SlashCommandBuilder()
             .setName("suggest")
-            .setDescription("Create a suggestion poll")
+            .setDescription("Create suggestion poll")
             .addStringOption(opt =>
                 opt.setName("text")
                     .setDescription("Suggestion text")
@@ -122,7 +117,7 @@ async function registerCommands() {
             )
             .addStringOption(opt =>
                 opt.setName("time")
-                    .setDescription("Time (10m, 1h, 1d)")
+                    .setDescription("10m, 1h, 1d")
                     .setRequired(true)
             )
 
@@ -131,263 +126,236 @@ async function registerCommands() {
     const rest = new REST({ version: "10" }).setToken(token);
 
     await rest.put(
-        Routes.applicationCommands(clientId),
+        Routes.applicationGuildCommands(clientId, guildId),
         { body: commands }
     );
 
-    console.log("🌍 Global slash commands registered.");
+    console.log("✅ Guild commands registered (no duplicates)");
 }
 
-/* ================= BOT EVENTS ================= */
+/* ================= BOT ================= */
 
 client.once("clientReady", () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
 client.on("interactionCreate", async interaction => {
-    try {
 
-        /* ================= SLASH COMMANDS ================= */
+    try {
 
         if (interaction.isChatInputCommand()) {
 
-            const guildId = interaction.guild.id;
-            const config = await getGuildConfig(guildId) || {};
+            const config = await getConfig(interaction.guild.id) || {};
 
-            // SETUP
+            /* SETUP */
             if (interaction.commandName === "setup") {
 
-                const staffRole = interaction.options.getRole("staff");
+                const role = interaction.options.getRole("staff");
 
-                await updateGuildConfig(guildId, {
-                    staffRoleId: staffRole.id,
+                await setConfig(interaction.guild.id, {
+                    staffRoleId: role.id,
                     ticketsEnabled: true,
                     suggestionsEnabled: true
                 });
 
                 return interaction.reply({
-                    content: `✅ Setup complete.\nStaff role set to ${staffRole}.`,
+                    content: `✅ Staff role set to ${role}`,
                     ephemeral: true
                 });
             }
 
-            // TICKET PANEL
+            /* TICKET PANEL */
             if (interaction.commandName === "ticketpanel") {
 
-                if (!config.ticketsEnabled)
-                    return interaction.reply({ content: "❌ Tickets disabled.", ephemeral: true });
+                if (!config.staffRoleId)
+                    return interaction.reply({ content:"❌ Run /setup first.", ephemeral:true });
 
                 const types = interaction.options.getString("types")
                     .split(";")
                     .map(t => t.trim())
                     .filter(Boolean);
 
-                if (!types.length)
-                    return interaction.reply({ content: "❌ No valid ticket types.", ephemeral: true });
-
-                await updateGuildConfig(guildId, { ticketTypes: types });
+                await setConfig(interaction.guild.id, { ticketTypes: types });
 
                 const embed = new EmbedBuilder()
                     .setTitle("🎟 Open a Ticket")
-                    .setDescription("Select a ticket type.")
+                    .setDescription("Choose a ticket type.")
                     .setColor(0x5865F2);
 
                 const menu = new StringSelectMenuBuilder()
-                    .setCustomId("ticket_type_select")
-                    .setPlaceholder("Choose ticket type")
-                    .addOptions(types.map((t, i) => ({
-                        label: t,
-                        value: i.toString()
-                    })));
+                    .setCustomId("ticket_type")
+                    .setPlaceholder("Select type")
+                    .addOptions(types.map((t,i)=>({ label:t, value:i.toString() })));
 
                 return interaction.reply({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(menu)]
+                    embeds:[embed],
+                    components:[new ActionRowBuilder().addComponents(menu)]
                 });
             }
 
-            // CLOSE
+            /* CLOSE */
             if (interaction.commandName === "close") {
 
                 if (!interaction.channel.name.startsWith("ticket-"))
-                    return interaction.reply({ content: "❌ Not a ticket channel.", ephemeral: true });
+                    return interaction.reply({ content:"❌ Not a ticket.", ephemeral:true });
 
-                await interaction.reply("🔒 Closing ticket...");
-                setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+                await interaction.reply("🔒 Closing...");
+                setTimeout(()=>interaction.channel.delete().catch(()=>{}),2000);
                 return;
             }
 
-            // SUGGEST
+            /* SUGGEST */
             if (interaction.commandName === "suggest") {
 
-                if (!config.suggestionsEnabled)
-                    return interaction.reply({ content: "❌ Suggestions disabled.", ephemeral: true });
+                const duration = parseTime(interaction.options.getString("time"));
+                if (!duration)
+                    return interaction.reply({ content:"❌ Invalid time.", ephemeral:true });
 
                 const text = interaction.options.getString("text");
-                const duration = parseTime(interaction.options.getString("time"));
-
-                if (!duration)
-                    return interaction.reply({ content: "❌ Invalid time format.", ephemeral: true });
 
                 const embed = new EmbedBuilder()
-                    .setTitle("📢 New Suggestion")
+                    .setTitle("📢 Suggestion")
                     .setDescription(text)
                     .addFields(
-                        { name: "👍 Yes", value: "0", inline: true },
-                        { name: "👎 No", value: "0", inline: true }
-                    )
-                    .setColor(0x5865F2);
+                        { name:"👍 Yes", value:"0", inline:true },
+                        { name:"👎 No", value:"0", inline:true }
+                    );
 
                 const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vote_yes").setLabel("👍 Yes").setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId("vote_no").setLabel("👎 No").setStyle(ButtonStyle.Danger)
+                    new ButtonBuilder().setCustomId("yes").setLabel("👍").setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId("no").setLabel("👎").setStyle(ButtonStyle.Danger)
                 );
 
-                const message = await interaction.reply({
-                    embeds: [embed],
-                    components: [row],
-                    fetchReply: true
+                const msg = await interaction.reply({
+                    embeds:[embed],
+                    components:[row],
+                    fetchReply:true
                 });
 
-                activePolls.set(message.id, { yes: new Set(), no: new Set() });
+                activePolls.set(msg.id,{ yes:new Set(), no:new Set() });
 
-                setTimeout(async () => {
-
-                    const poll = activePolls.get(message.id);
-                    if (!poll) return;
+                setTimeout(async ()=>{
+                    const poll = activePolls.get(msg.id);
+                    if(!poll) return;
 
                     const voters = [...poll.yes, ...poll.no];
 
-                    const finalEmbed = new EmbedBuilder()
-                        .setTitle("📊 Poll Ended")
-                        .setDescription(text)
-                        .addFields(
-                            { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                            { name: "👎 No", value: `${poll.no.size}`, inline: true }
-                        )
-                        .setColor(0x22c55e);
+                    await msg.edit({
+                        embeds:[
+                            new EmbedBuilder()
+                                .setTitle("📊 Poll Ended")
+                                .setDescription(text)
+                                .addFields(
+                                    { name:"👍 Yes", value:String(poll.yes.size), inline:true },
+                                    { name:"👎 No", value:String(poll.no.size), inline:true }
+                                )
+                        ],
+                        components:[]
+                    });
 
-                    await message.edit({ embeds: [finalEmbed], components: [] });
+                    if(voters.length)
+                        await msg.channel.send(voters.map(id=>`<@${id}>`).join(" "));
 
-                    if (voters.length)
-                        await message.channel.send(voters.map(id => `<@${id}>`).join(" "));
-
-                    activePolls.delete(message.id);
+                    activePolls.delete(msg.id);
 
                 }, duration);
             }
         }
 
-        /* ================= SELECT MENU ================= */
-
+        /* SELECT MENU */
         if (interaction.isStringSelectMenu()) {
 
-            if (interaction.customId !== "ticket_type_select") return;
+            if (interaction.customId !== "ticket_type") return;
 
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral:true });
 
-            const config = await getGuildConfig(interaction.guild.id);
-            if (!config || !config.ticketTypes)
-                return interaction.editReply("❌ Ticket system not configured.");
+            const config = await getConfig(interaction.guild.id);
+            if(!config || !config.staffRoleId)
+                return interaction.editReply("❌ Setup not complete.");
 
             const index = parseInt(interaction.values[0]);
             const typeName = config.ticketTypes[index];
-            if (!typeName)
-                return interaction.editReply("❌ Invalid ticket type.");
 
             const count = await incrementTicketCount(interaction.guild.id);
 
             const channel = await interaction.guild.channels.create({
-                name: `ticket-${count}-${typeName.replace(/\s+/g, "-").toLowerCase()}`,
-                type: ChannelType.GuildText,
-                permissionOverwrites: [
-                    { id: interaction.guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel] },
-                    { id: config.staffRoleId, allow: [PermissionFlagsBits.ViewChannel] }
+                name:`ticket-${count}`,
+                type:ChannelType.GuildText,
+                permissionOverwrites:[
+                    { id:interaction.guild.roles.everyone, deny:[PermissionFlagsBits.ViewChannel] },
+                    { id:interaction.user.id, allow:[PermissionFlagsBits.ViewChannel] },
+                    { id:config.staffRoleId, allow:[PermissionFlagsBits.ViewChannel] }
                 ]
             });
 
-            const claimButton = new ButtonBuilder()
-                .setCustomId("claim_ticket")
+            const claimBtn = new ButtonBuilder()
+                .setCustomId("claim")
                 .setLabel("Claim Ticket")
                 .setStyle(ButtonStyle.Primary);
 
             await channel.send({
-                content: `<@&${config.staffRoleId}>`,
-                components: [new ActionRowBuilder().addComponents(claimButton)]
+                content:`Ticket Type: **${typeName}**\n<@&${config.staffRoleId}>`,
+                components:[new ActionRowBuilder().addComponents(claimBtn)]
             });
 
-            return interaction.editReply(`✅ Ticket created: ${channel}`);
+            return interaction.editReply(`✅ Created ${channel}`);
         }
 
-        /* ================= BUTTONS ================= */
-
+        /* BUTTONS */
         if (interaction.isButton()) {
 
-            // CLAIM
-            if (interaction.customId === "claim_ticket") {
+            if (interaction.customId === "claim") {
                 await interaction.reply({
-                    content: `🎟 Ticket claimed by ${interaction.user}`,
-                    allowedMentions: { parse: [] }
+                    content:`🎟 Claimed by ${interaction.user}`,
+                    allowedMentions:{ parse:[] }
                 });
-                await interaction.message.edit({ components: [] });
+                await interaction.message.edit({ components:[] });
                 return;
             }
 
             const poll = activePolls.get(interaction.message.id);
-            if (!poll)
-                return interaction.reply({ content: "❌ Poll expired.", ephemeral: true });
+            if(!poll)
+                return interaction.reply({ content:"Poll expired.", ephemeral:true });
 
-            if (interaction.customId === "vote_yes") {
+            if(interaction.customId==="yes"){
                 poll.no.delete(interaction.user.id);
                 poll.yes.add(interaction.user.id);
             }
-
-            if (interaction.customId === "vote_no") {
+            if(interaction.customId==="no"){
                 poll.yes.delete(interaction.user.id);
                 poll.no.add(interaction.user.id);
             }
 
             const embed = EmbedBuilder.from(interaction.message.embeds[0])
                 .setFields(
-                    { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                    { name: "👎 No", value: `${poll.no.size}`, inline: true }
+                    { name:"👍 Yes", value:String(poll.yes.size), inline:true },
+                    { name:"👎 No", value:String(poll.no.size), inline:true }
                 );
 
-            return interaction.update({ embeds: [embed] });
+            return interaction.update({ embeds:[embed] });
         }
 
-    } catch (err) {
-        console.error("Interaction error:", err);
-
-        if (interaction.replied || interaction.deferred)
-            await interaction.followUp({ content: "❌ Something went wrong.", ephemeral: true }).catch(() => {});
-        else
-            await interaction.reply({ content: "❌ Something went wrong.", ephemeral: true }).catch(() => {});
+    } catch(err){
+        console.error(err);
+        if(!interaction.replied)
+            interaction.reply({ content:"❌ Something went wrong.", ephemeral:true }).catch(()=>{});
     }
 });
 
 /* ================= WEBSITE ================= */
 
-app.get("/", (req, res) => {
-    res.send("<h1>Luigiho Bot is Running 🚀</h1>");
-});
-
-app.get("/api/status", (req, res) => {
-    res.json({
-        online: client.isReady(),
-        servers: client.guilds.cache.size
-    });
+app.get("/", (req,res)=>{
+    res.send("<h1>Luigiho Bot Running 🚀</h1>");
 });
 
 /* ================= START ================= */
 
-(async () => {
+(async()=>{
     await connectDB();
     await registerCommands();
     await client.login(token);
 
-    app.listen(3000, "0.0.0.0", () => {
+    app.listen(3000,"0.0.0.0",()=>{
         console.log("🌐 Web server running");
     });
 })();
