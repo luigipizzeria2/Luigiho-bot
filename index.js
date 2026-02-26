@@ -261,68 +261,103 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // ================= SELECT MENU =================
-        if (interaction.isStringSelectMenu()) {
+if (interaction.isStringSelectMenu()) {
 
-            if (interaction.customId !== "select_ticket_type") return;
+    if (interaction.customId !== "select_ticket_type") return;
 
-            if (findUserTicket(interaction.guild, interaction.user.id)) {
-                return interaction.reply({
-                    content: "❌ You already have an open ticket.",
-                    ephemeral: true
-                });
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+
+        if (findUserTicket(interaction.guild, interaction.user.id)) {
+            return interaction.editReply({
+                content: "❌ You already have an open ticket."
+            });
+        }
+
+        const type = interaction.values[0];
+        const count = await incrementTicketCount();
+
+        let category = interaction.guild.channels.cache.find(
+            c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
+        );
+
+        if (!category) {
+            category = await interaction.guild.channels.create({
+                name: "Tickets",
+                type: ChannelType.GuildCategory
+            });
+        }
+
+        const permissionOverwrites = [
+            {
+                id: interaction.guild.id,
+                deny: [PermissionsBitField.Flags.ViewChannel]
+            },
+            {
+                id: interaction.user.id,
+                allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages
+                ]
+            },
+            {
+                id: interaction.guild.members.me.id,
+                allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages
+                ]
             }
+        ];
 
-            await interaction.deferReply({ ephemeral: true });
-
-            const type = interaction.values[0];
-            const count = await incrementTicketCount();
-
-            let category = interaction.guild.channels.cache.find(
-                c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
-            );
-
-            if (!category) {
-                category = await interaction.guild.channels.create({
-                    name: "Tickets",
-                    type: ChannelType.GuildCategory
-                });
-            }
-
-            const channel = await interaction.guild.channels.create({
-                name: `${type}-${count}`,
-                parent: category.id,
-                permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                    { id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                    { id: interaction.guild.members.me.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        // Only add staff role if it exists
+        if (staffRoleId) {
+            permissionOverwrites.push({
+                id: staffRoleId,
+                allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages
                 ]
             });
-
-            const claimBtn = new ButtonBuilder()
-                .setCustomId("claim_ticket")
-                .setLabel("Claim Ticket")
-                .setStyle(ButtonStyle.Success);
-
-            const closeBtn = new ButtonBuilder()
-                .setCustomId("close_ticket")
-                .setLabel("Close Ticket")
-                .setStyle(ButtonStyle.Danger);
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🎟 Ticket #${count}`)
-                .setDescription(`Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`)
-                .setColor(0x00FF99);
-
-            await channel.send({
-                content: `<@&${staffRoleId}>`,
-                embeds: [embed],
-                components: [new ActionRowBuilder().addComponents(claimBtn, closeBtn)],
-                allowedMentions: { roles: [staffRoleId] }
-            });
-
-            return interaction.editReply(`✅ Ticket created: ${channel}`);
         }
+
+        const channel = await interaction.guild.channels.create({
+            name: `${type}-${count}`,
+            parent: category.id,
+            permissionOverwrites
+        });
+
+        const claimBtn = new ButtonBuilder()
+            .setCustomId("claim_ticket")
+            .setLabel("Claim Ticket")
+            .setStyle(ButtonStyle.Success);
+
+        const closeBtn = new ButtonBuilder()
+            .setCustomId("close_ticket")
+            .setLabel("Close Ticket")
+            .setStyle(ButtonStyle.Danger);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`🎟 Ticket #${count}`)
+            .setDescription(
+                `Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`
+            )
+            .setColor(0x00FF99);
+
+        await channel.send({
+            content: staffRoleId ? `<@&${staffRoleId}>` : null,
+            embeds: [embed],
+            components: [new ActionRowBuilder().addComponents(claimBtn, closeBtn)],
+            allowedMentions: staffRoleId ? { roles: [staffRoleId] } : {}
+        });
+
+        return interaction.editReply(`✅ Ticket created: ${channel}`);
+
+    } catch (err) {
+        console.error("Ticket error:", err);
+        return interaction.editReply("❌ Failed to create ticket. Check bot permissions.");
+    }
+}
 
         // ================= BUTTONS =================
         if (interaction.isButton()) {
