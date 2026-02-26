@@ -26,7 +26,7 @@ const { MongoClient } = require('mongodb');
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
-const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
+const staffRoleId = process.env.STAFF_ROLE_ID;
 const mongoURI = process.env.MONGO_URI;
 
 const client = new Client({
