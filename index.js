@@ -26,7 +26,8 @@ const { MongoClient } = require('mongodb');
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
-const staffRoleId = process.env.STAFF_ROLE_ID;
+const settings = await getSettings();
+const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
 const mongoURI = process.env.MONGO_URI;
 
 const client = new Client({
@@ -53,6 +54,11 @@ async function incrementTicketCount() {
     return result.value.value;
 }
 
+async function getSettings() {
+    const data = await database.collection("config").findOne({ name: "settings" });
+    return data || {};
+}
+
 // ================= TIME PARSER =================
 function parseTime(input) {
     const match = input.match(/^(\d+)([smhd])$/);
@@ -77,16 +83,27 @@ async function registerCommands() {
         
         new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Set the staff role for tickets')
+    .setDescription('Configure the bot')
     .addRoleOption(option =>
-        option.setName('role')
-            .setDescription('Staff role')
-            .setRequired(true)
+        option.setName('staffrole')
+            .setDescription('Set staff role')
+    )
+    .addStringOption(option =>
+        option.setName('enable')
+            .setDescription('Enable a command')
+    )
+    .addStringOption(option =>
+        option.setName('disable')
+            .setDescription('Disable a command')
     ),
 
         new SlashCommandBuilder()
-            .setName('ticketpanel')
-            .setDescription('Send the support ticket panel'),
+    .setName('ticketpanel')
+    .setDescription('Send the support ticket panel')
+    .addStringOption(option =>
+        option.setName('types')
+            .setDescription('Custom types separated by commas')
+    ),
 
         new SlashCommandBuilder()
             .setName('close')
@@ -143,27 +160,50 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // ================= SLASH COMMANDS =================
         if (interaction.isChatInputCommand()) {
+            const settings = await getSettings();
+const disabled = settings.disabled || [];
+
+if (disabled.includes(interaction.commandName)) {
+    return interaction.reply({
+        content: "❌ This command is disabled.",
+        ephemeral: true
+    });
+}
 
             // ==== SETUP ====
-            if (interaction.commandName === 'setup') {
+         if (interaction.commandName === 'setup') {
 
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         return interaction.reply({
-            content: "❌ You must be an admin.",
+            content: "❌ Admin only.",
             ephemeral: true
         });
     }
 
-    const role = interaction.options.getRole('role');
+    const role = interaction.options.getRole('staffrole');
+    const enable = interaction.options.getString('enable');
+    const disable = interaction.options.getString('disable');
+
+    let update = {};
+
+    if (role) update.staffRole = role.id;
+
+    if (enable) {
+        update.$pull = { disabled: enable };
+    }
+
+    if (disable) {
+        update.$addToSet = { disabled: disable };
+    }
 
     await database.collection("config").updateOne(
-        { name: "staffRole" },
-        { $set: { roleId: role.id } },
+        { name: "settings" },
+        update,
         { upsert: true }
     );
 
     return interaction.reply({
-        content: `✅ Staff role set to ${role}`,
+        content: "✅ Settings updated.",
         ephemeral: true
     });
 }
@@ -183,15 +223,26 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription("Select the type of ticket below.")
                     .setColor(0x5865F2);
 
-                const selectMenu = new StringSelectMenuBuilder()
-                    .setCustomId("select_ticket_type")
-                    .setPlaceholder("Choose a ticket type")
-                    .addOptions([
-                        { label: "Minecraft Server Help", value: "minecraft", emoji: "🎮" },
-                        { label: "Suggestion", value: "suggestion", emoji: "💡" },
-                        { label: "Need Help", value: "help", emoji: "❓" },
-                        { label: "YouTube Collab", value: "youtube", emoji: "🎥" }
-                    ]);
+                const customTypes = interaction.options.getString("types");
+
+let ticketTypes = [
+    { label: "Minecraft Server Help", value: "minecraft", emoji: "🎮" },
+    { label: "Suggestion", value: "suggestion", emoji: "💡" },
+    { label: "Need Help", value: "help", emoji: "❓" },
+    { label: "YouTube Collab", value: "youtube", emoji: "🎥" }
+];
+
+if (customTypes) {
+    ticketTypes = customTypes.split(",").map(t => ({
+        label: t.trim(),
+        value: t.trim().toLowerCase()
+    }));
+}
+
+const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId("select_ticket_type")
+    .setPlaceholder("Choose a ticket type")
+    .addOptions(ticketTypes);
 
                 return interaction.reply({
                     embeds: [embed],
@@ -410,8 +461,8 @@ if (interaction.isStringSelectMenu()) {
             // Claim Ticket Button
 if (interaction.customId === "claim_ticket") {
 
-    const config = await database.collection("config").findOne({ name: "staffRole" });
-    const staffRoleId = config?.roleId;
+    const settings = await getSettings();
+    const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
 
     if (!staffRoleId || !interaction.member.roles.cache.has(staffRoleId)) {
         return interaction.reply({
@@ -420,13 +471,14 @@ if (interaction.customId === "claim_ticket") {
         });
     }
 
-    const embed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setDescription(
-            interaction.message.embeds[0].description.replace(
-                "❌ Not claimed",
-                `✅ Claimed by ${interaction.user}`
-            )
-        );
+    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+    embed.setDescription(
+        embed.data.description.replace(
+            "❌ Not claimed",
+            `✅ Claimed by ${interaction.user}`
+        )
+    );
 
     return interaction.update({
         embeds: [embed]
