@@ -183,9 +183,19 @@ if (disabled.includes(interaction.commandName)) {
     const enable = interaction.options.getString('enable');
     const disable = interaction.options.getString('disable');
 
-    let update = {};
+    // If no options were provided
+    if (!role && !enable && !disable) {
+        return interaction.reply({
+            content: "❌ You must provide at least one option.",
+            ephemeral: true
+        });
+    }
 
-    if (role) update.staffRole = role.id;
+    const update = {};
+
+    if (role) {
+        update.$set = { staffRole: role.id };
+    }
 
     if (enable) {
         update.$pull = { disabled: enable };
