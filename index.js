@@ -74,6 +74,15 @@ function parseTime(input) {
 // ================= REGISTER COMMANDS =================
 async function registerCommands() {
     const commands = [
+        
+        new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Set the staff role for tickets')
+    .addRoleOption(option =>
+        option.setName('role')
+            .setDescription('Staff role')
+            .setRequired(true)
+    ),
 
         new SlashCommandBuilder()
             .setName('ticketpanel')
@@ -100,6 +109,11 @@ async function registerCommands() {
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
+
+    await rest.put(
+    Routes.applicationCommands(clientId),
+    { body: [] }
+);
 
     await rest.put(
         Routes.applicationGuildCommands(clientId, guildId),
@@ -129,6 +143,30 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // ================= SLASH COMMANDS =================
         if (interaction.isChatInputCommand()) {
+
+            // ==== SETUP ====
+            if (interaction.commandName === 'setup') {
+
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+            content: "❌ You must be an admin.",
+            ephemeral: true
+        });
+    }
+
+    const role = interaction.options.getRole('role');
+
+    await database.collection("config").updateOne(
+        { name: "staffRole" },
+        { $set: { roleId: role.id } },
+        { upsert: true }
+    );
+
+    return interaction.reply({
+        content: `✅ Staff role set to ${role}`,
+        ephemeral: true
+    });
+}
 
             // ===== TICKET PANEL =====
             if (interaction.commandName === 'ticketpanel') {
@@ -368,6 +406,32 @@ if (interaction.isStringSelectMenu()) {
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
                 return;
             }
+
+            // Claim Ticket Button
+if (interaction.customId === "claim_ticket") {
+
+    const config = await database.collection("config").findOne({ name: "staffRole" });
+    const staffRoleId = config?.roleId;
+
+    if (!staffRoleId || !interaction.member.roles.cache.has(staffRoleId)) {
+        return interaction.reply({
+            content: "❌ Only staff can claim tickets.",
+            ephemeral: true
+        });
+    }
+
+    const embed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setDescription(
+            interaction.message.embeds[0].description.replace(
+                "❌ Not claimed",
+                `✅ Claimed by ${interaction.user}`
+            )
+        );
+
+    return interaction.update({
+        embeds: [embed]
+    });
+}
 
             // Voting Buttons
             const poll = activePolls.get(interaction.message.id);
