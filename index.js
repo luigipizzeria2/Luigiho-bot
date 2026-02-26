@@ -160,9 +160,14 @@ client.on(Events.InteractionCreate, async interaction => {
         // ================= SLASH COMMANDS =================
         if (interaction.isChatInputCommand()) {
             const settings = await getSettings();
-const disabled = settings.disabled || [];
 
-if (disabled.includes(interaction.commandName)) {
+let disabled = settings.disabled || [];
+
+if (!Array.isArray(disabled)) {
+    disabled = [disabled];
+}
+
+if (disabled.includes(interaction.commandName.toLowerCase())) {
     return interaction.reply({
         content: "❌ This command is disabled.",
         ephemeral: true
@@ -198,12 +203,12 @@ if (disabled.includes(interaction.commandName)) {
     }
 
     if (enable) {
-        update.$pull = { disabled: enable };
-    }
+    update.$pull = { disabled: enable.toLowerCase() };
+}
 
     if (disable) {
-        update.$addToSet = { disabled: disable };
-    }
+    update.$addToSet = { disabled: disable.toLowerCase() };
+}
 
     await database.collection("config").updateOne(
         { name: "settings" },
