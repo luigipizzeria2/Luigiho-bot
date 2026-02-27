@@ -425,7 +425,10 @@ if (interaction.isStringSelectMenu()) {
         }
 
         const channel = await interaction.guild.channels.create({
-            name: `${type}-${count}`,
+            name: `${type}-${interaction.user.username}`
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, ''),
             parent: category.id,
             permissionOverwrites
         });
