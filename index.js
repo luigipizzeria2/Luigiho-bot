@@ -1,3 +1,4 @@
+console.log("BOT VERSION TEST 123");
 require('dotenv').config();
 const express = require('express');
 const app = express();
