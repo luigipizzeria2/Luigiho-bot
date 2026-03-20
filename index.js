@@ -31,9 +31,12 @@ const staffRoleId = process.env.STAFF_ROLE_ID;
 const mongoURI = process.env.MONGO_URI;
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers
+    ]
 });
-
 let database;
 const activePolls = new Map();
 
@@ -140,7 +143,7 @@ async function registerCommands() {
     console.log("Slash commands registered.");
 }
 
-client.once('clientReady', () => {
+client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
