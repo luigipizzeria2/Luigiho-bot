@@ -5,7 +5,10 @@ const express = require('express');
 const app = express();
 
 app.get('/status', (req, res) => {
-  res.json({ online: client.isReady() });
+    res.json({ 
+        online: client.isReady(),
+        avatar: app.locals.avatarURL || null
+    });
 });
 
 app.get('/', (req, res) => res.send(`<!DOCTYPE html>
@@ -142,7 +145,8 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
 <div class="glow"></div>
 
 <div class="header">
-  <div class="avatar">L</div>
+  <img id="avatar" src="" width="80" height="80" style="border-radius:50%; box-shadow: 0 0 40px rgba(88,101,242,0.4); display:none;">
+<div class="avatar" id="avatar-fallback">L</div>
   <h1>Luigiho <span>Bot</span></h1>
   <div class="status-pill">
     <div class="dot" id="dot"></div>
@@ -183,7 +187,13 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
   </div>
 </div>
 
-<footer>Luigiho Bot &mdash; Running on Discord.js v14</footer>
+<footer>
+  Luigiho Bot &mdash; Running on Discord.js v14 &mdash;
+  <a href="https://discord.com/oauth2/authorize?client_id=1473059410002575371&permissions=8&scope=bot%20applications.commands" 
+     target="_blank" style="color: var(--purple-light); text-decoration: none;">
+    Invite Bot
+  </a>
+</footer>
 
 <script>
   fetch('/status')
@@ -197,6 +207,13 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
       } else {
         dot.classList.add('offline');
         text.textContent = 'Offline';
+      }
+      if (data.avatar) {
+        const img = document.getElementById('avatar');
+        const fallback = document.getElementById('avatar-fallback');
+        img.src = data.avatar;
+        img.style.display = 'block';
+        fallback.style.display = 'none';
       }
     })
     .catch(() => {
@@ -347,6 +364,7 @@ async function registerCommands() {
 
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
+    app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
 });
 
 // ================= FIND USER TICKET =================
