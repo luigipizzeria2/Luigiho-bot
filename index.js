@@ -223,7 +223,7 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
 </body>
 </html>`));
 
-app.listen(3000, () => console.log('Web server running on port 3000'));
+// app.listen(3000, () => console.log('Web server running on port 3000'));
 
 const {
     Client,
@@ -762,4 +762,5 @@ if (interaction.customId === "claim_ticket") {
     await connectDB();
     await registerCommands();
     await client.login(token);
+    app.listen(3000, () => console.log('Web server running on port 3000'));
 })();
