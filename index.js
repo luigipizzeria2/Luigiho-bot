@@ -1,10 +1,212 @@
 console.log("BOT VERSION TEST 123");
 require('dotenv').config();
+
 const express = require('express');
 const app = express();
 
-app.get('/', (req, res) => res.send('I like bread'));
-app.listen(3000, () => console.log('Web server running'));
+app.get('/status', (req, res) => {
+  res.json({ online: client.isReady() });
+});
+
+app.get('/', (req, res) => res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luigiho Bot</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --purple: #5865F2;
+    --purple-dark: #4752c4;
+    --purple-light: #7983f5;
+    --bg: #0e0f13;
+    --bg2: #16181f;
+    --bg3: #1e2028;
+    --border: rgba(88,101,242,0.2);
+    --text: #e8e9f0;
+    --muted: #8b8fa8;
+    --green: #3ba55d;
+    --red: #ed4245;
+  }
+
+  body {
+    font-family: 'Rajdhani', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1.5rem;
+  }
+
+  .glow {
+    position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 400px;
+    background: radial-gradient(ellipse, rgba(88,101,242,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .header {
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    margin-bottom: 3rem; text-align: center;
+  }
+
+  .avatar {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--purple), var(--purple-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; font-weight: 700; color: white;
+    box-shadow: 0 0 40px rgba(88,101,242,0.4);
+  }
+
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+  h1 span { color: var(--purple-light); }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 16px; border-radius: 99px;
+    background: var(--bg3); border: 1px solid var(--border);
+    font-size: 0.85rem; font-weight: 500;
+  }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+  .dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem; width: 100%; max-width: 860px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: var(--purple); transform: translateY(-2px); }
+
+  .card-icon {
+    font-size: 1.5rem; margin-bottom: 0.75rem;
+  }
+
+  .card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+  .card p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+
+  .commands {
+    margin-top: 2rem; width: 100%; max-width: 860px;
+  }
+
+  .commands h2 {
+    font-size: 1.1rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 1rem;
+  }
+
+  .cmd-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .cmd {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.9rem 1.2rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+
+  .cmd-name {
+    font-family: monospace; font-size: 0.95rem;
+    color: var(--purple-light); font-weight: 600; min-width: 140px;
+  }
+
+  .cmd-desc { font-size: 0.85rem; color: var(--muted); }
+
+  footer {
+    margin-top: 3rem; font-size: 0.8rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<div class="header">
+  <div class="avatar">L</div>
+  <h1>Luigiho <span>Bot</span></h1>
+  <div class="status-pill">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">Checking...</span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-icon">🎟️</div>
+    <h3>Ticket System</h3>
+    <p>Open support tickets by category. Staff can claim and close tickets directly from Discord.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">📢</div>
+    <h3>Suggestion Polls</h3>
+    <p>Create timed polls with yes/no voting. Results are announced automatically when the poll ends.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">⚙️</div>
+    <h3>Admin Setup</h3>
+    <p>Configure staff roles, enable or disable commands per-server using simple slash commands.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🎥</div>
+    <h3>YouTube Collabs</h3>
+    <p>Dedicated ticket type for YouTube collaboration requests, routed directly to staff.</p>
+  </div>
+</div>
+
+<div class="commands">
+  <h2>Commands</h2>
+  <div class="cmd-list">
+    <div class="cmd"><span class="cmd-name">/ticketpanel</span><span class="cmd-desc">Send the support ticket panel to a channel</span></div>
+    <div class="cmd"><span class="cmd-name">/close</span><span class="cmd-desc">Close your currently open ticket</span></div>
+    <div class="cmd"><span class="cmd-name">/suggest</span><span class="cmd-desc">Create a suggestion poll with a custom duration</span></div>
+    <div class="cmd"><span class="cmd-name">/setup</span><span class="cmd-desc">Configure staff role and enable/disable commands</span></div>
+  </div>
+</div>
+
+<footer>Luigiho Bot &mdash; Running on Discord.js v14</footer>
+
+<script>
+  fetch('/status')
+    .then(r => r.json())
+    .then(data => {
+      const dot = document.getElementById('dot');
+      const text = document.getElementById('status-text');
+      if (data.online) {
+        dot.classList.remove('offline');
+        text.textContent = 'Online';
+      } else {
+        dot.classList.add('offline');
+        text.textContent = 'Offline';
+      }
+    })
+    .catch(() => {
+      document.getElementById('status-text').textContent = 'Unknown';
+    });
+</script>
+</body>
+</html>`));
+
+app.listen(3000, () => console.log('Web server running on port 3000'));
 
 const {
     Client,
