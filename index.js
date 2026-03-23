@@ -419,8 +419,8 @@ const Parser = require('rss-parser');
 const rssParser = new Parser();
 
 const youtubeChannels = [
-    { id: 'UCG6Ti9RLDK_B78hIAlCUdfQ', name: 'Main Channel', roleKey: 'role1' },
-    { id: 'UCziBqG_7kDA4Jclw6BAh5dw', name: 'Second Channel', roleKey: 'role2' }
+    { id: 'UCG6Ti9RLDK_B78hIAlCUdfQ', name: 'luigipizzeria2', roleKey: 'role1' },
+    { id: 'UCziBqG_7kDA4Jclw6BAh5dw', name: 'lugi', roleKey: 'role2' }
 ];
 
 const lastVideoIds = new Map();
