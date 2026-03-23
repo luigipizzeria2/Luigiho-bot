@@ -182,10 +182,10 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
     <div class="cmd"><span class="cmd-name">/close</span><span class="cmd-desc">Close your currently open ticket</span></div>
     <div class="cmd"><span class="cmd-name">/suggest</span><span class="cmd-desc">Create a suggestion poll with a custom duration</span></div>
     <div class="cmd"><span class="cmd-name">/8ball</span><span class="cmd-desc">Ask the magic 8ball a question</span></div>
-    <div class="cmd"><span class="cmd-name">/fun1</span><span class="cmd-desc">A fun command</span></div>
-    <div class="cmd"><span class="cmd-name">/fun2</span><span class="cmd-desc">A fun command</span></div>
-    <div class="cmd"><span class="cmd-name">/fun3</span><span class="cmd-desc">A fun command</span></div>
-    <div class="cmd"><span class="cmd-name">/fun4</span><span class="cmd-desc">A fun command</span></div>
+    <div class="cmd"><span class="cmd-name">/baldi</span><span class="cmd-desc">baldiho command</span></div>
+    <div class="cmd"><span class="cmd-name">/lukasz</span><span class="cmd-desc">lukasovo command</span></div>
+    <div class="cmd"><span class="cmd-name">/baf</span><span class="cmd-desc">vylekej bota</span></div>
+    <div class="cmd"><span class="cmd-name">/koika</span><span class="cmd-desc">zvuk kocky</span></div>
     <div class="cmd"><span class="cmd-name">/setyoutube</span><span class="cmd-desc">Set YouTube announcement channel and ping roles</span></div>
     <div class="cmd"><span class="cmd-name">/setup</span><span class="cmd-desc">Configure staff role and enable/disable commands</span></div>
 </div>
@@ -517,7 +517,7 @@ if (interaction.commandName === 'setup') {
     // List of all toggleable commands
     const toggleable = [
         'ticketpanel', 'close', 'suggest', '8ball',
-        'fun1', 'fun2', 'fun3', 'fun4', 'setyoutube'
+        'baldi', 'lukasz', 'koika', 'baf', 'setyoutube'
     ];
 
     // If no options provided, show current status
@@ -874,13 +874,7 @@ if (interaction.customId === "claim_ticket") {
             await interaction.update({ embeds: [updatedEmbed] });
         }
 
-    } catch (err) {
-        console.error(err);
-        if (!interaction.replied && !interaction.deferred) {
-            interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
-        }
-    }
-});
+
 // ===== 8BALL =====
 if (interaction.commandName === '8ball') {
     const responses = [
@@ -940,6 +934,14 @@ if (interaction.commandName === 'setyoutube') {
     );
     return interaction.reply({ content: `YouTube announcements will be posted in ${channel}`, ephemeral: true });
 }
+    // new commands before this
+} catch (err) {
+        console.error(err);
+        if (!interaction.replied && !interaction.deferred) {
+            interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
+        }
+    }
+});
 // ================= START =================
 (async () => {
     await connectDB();
