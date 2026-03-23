@@ -624,10 +624,10 @@ const selectMenu = new StringSelectMenuBuilder()
                 const ticket = findUserTicket(interaction.guild, interaction.user.id);
 
                 if (!ticket) {
-                    return interaction.editReply("❌ You do not have an open ticket.");
+                    return interaction.editReply("❌ Nemáš otevřený ticket.");
                 }
 
-                await interaction.editReply("🔒 Closing ticket in 5 seconds...");
+                await interaction.editReply("🔒 Ticket se uzavře za 5 sekund");
 
                 setTimeout(() => {
                     ticket.delete().catch(() => {});
@@ -650,11 +650,11 @@ const selectMenu = new StringSelectMenuBuilder()
                 }
 
                 const embed = new EmbedBuilder()
-                    .setTitle("📢 New Suggestion")
+                    .setTitle("📢 Nový návrh")
                     .setDescription(text)
                     .addFields(
-                        { name: "👍 Yes", value: "0", inline: true },
-                        { name: "👎 No", value: "0", inline: true }
+                        { name: "👍 Ano", value: "0", inline: true },
+                        { name: "👎 Ne", value: "0", inline: true }
                     )
                     .setColor(0x5865F2);
 
