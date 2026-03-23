@@ -177,14 +177,18 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
   </div>
 </div>
 
-<div class="commands">
-  <h2>Commands</h2>
-  <div class="cmd-list">
+<div class="cmd-list">
     <div class="cmd"><span class="cmd-name">/ticketpanel</span><span class="cmd-desc">Send the support ticket panel to a channel</span></div>
     <div class="cmd"><span class="cmd-name">/close</span><span class="cmd-desc">Close your currently open ticket</span></div>
     <div class="cmd"><span class="cmd-name">/suggest</span><span class="cmd-desc">Create a suggestion poll with a custom duration</span></div>
+    <div class="cmd"><span class="cmd-name">/8ball</span><span class="cmd-desc">Ask the magic 8ball a question</span></div>
+    <div class="cmd"><span class="cmd-name">/fun1</span><span class="cmd-desc">A fun command</span></div>
+    <div class="cmd"><span class="cmd-name">/fun2</span><span class="cmd-desc">A fun command</span></div>
+    <div class="cmd"><span class="cmd-name">/fun3</span><span class="cmd-desc">A fun command</span></div>
+    <div class="cmd"><span class="cmd-name">/fun4</span><span class="cmd-desc">A fun command</span></div>
+    <div class="cmd"><span class="cmd-name">/setyoutube</span><span class="cmd-desc">Set YouTube announcement channel and ping roles</span></div>
     <div class="cmd"><span class="cmd-name">/setup</span><span class="cmd-desc">Configure staff role and enable/disable commands</span></div>
-  </div>
+</div>
 </div>
 
 <footer>
@@ -500,23 +504,33 @@ if (disabled.includes(interaction.commandName.toLowerCase())) {
 }
 
             // ==== SETUP ====
-         if (interaction.commandName === 'setup') {
+if (interaction.commandName === 'setup') {
 
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({
-            content: "❌ Admin only.",
-            ephemeral: true
-        });
+        return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
     }
 
     const role = interaction.options.getRole('staffrole');
     const enable = interaction.options.getString('enable');
     const disable = interaction.options.getString('disable');
 
-    // If no options were provided
+    // List of all toggleable commands
+    const toggleable = [
+        'ticketpanel', 'close', 'suggest', '8ball',
+        'fun1', 'fun2', 'fun3', 'fun4', 'setyoutube'
+    ];
+
+    // If no options provided, show current status
     if (!role && !enable && !disable) {
+        const settings = await getSettings();
+        const disabled = settings.disabled || [];
+
+        const statusList = toggleable.map(cmd =>
+            `${disabled.includes(cmd) ? '🔴' : '🟢'} /${cmd}`
+        ).join('\n');
+
         return interaction.reply({
-            content: "❌ You must provide at least one option.",
+            content: `**Command Status:**\n${statusList}\n\nUse \`/setup enable:<command>\` or \`/setup disable:<command>\` to toggle.`,
             ephemeral: true
         });
     }
@@ -528,12 +542,24 @@ if (disabled.includes(interaction.commandName.toLowerCase())) {
     }
 
     if (enable) {
-    update.$pull = { disabled: enable.toLowerCase() };
-}
+        if (!toggleable.includes(enable.toLowerCase())) {
+            return interaction.reply({
+                content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`,
+                ephemeral: true
+            });
+        }
+        update.$pull = { disabled: enable.toLowerCase() };
+    }
 
     if (disable) {
-    update.$addToSet = { disabled: disable.toLowerCase() };
-}
+        if (!toggleable.includes(disable.toLowerCase())) {
+            return interaction.reply({
+                content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`,
+                ephemeral: true
+            });
+        }
+        update.$addToSet = { disabled: disable.toLowerCase() };
+    }
 
     await database.collection("config").updateOne(
         { name: "settings" },
@@ -541,10 +567,7 @@ if (disabled.includes(interaction.commandName.toLowerCase())) {
         { upsert: true }
     );
 
-    return interaction.reply({
-        content: "✅ Settings updated.",
-        ephemeral: true
-    });
+    return interaction.reply({ content: "✅ Settings updated.", ephemeral: true });
 }
 
             // ===== TICKET PANEL =====
