@@ -243,7 +243,8 @@ const {
     Routes,
     SlashCommandBuilder,
     ChannelType,
-    StringSelectMenuBuilder
+    StringSelectMenuBuilder,
+    ActivityType,
 } = require('discord.js');
 
 const { MongoClient } = require('mongodb');
@@ -459,6 +460,7 @@ async function checkYouTube() {
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
+    client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
 
     // Initialize last video IDs on startup (no announcements for existing videos)
     setTimeout(async () => {
