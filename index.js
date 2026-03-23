@@ -223,7 +223,8 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
 </body>
 </html>`));
 
-// app.listen(3000, () => console.log('Web server running on port 3000'));
+// self ping to prevent sleeping
+setInterval(() => { fetch('https://obvious-maribel-luigiho-pizzerie-242e17fc.koyeb.app/') .catch(() => {}); }, 5 * 60 * 1000);
 
 const {
     Client,
