@@ -472,7 +472,7 @@ client.once(Events.ClientReady, () => {
         }
         console.log('✅ YouTube checker initialized');
         // Check every 5 minutes
-        setInterval(checkYouTube, 5 * 60 * 1000);
+        setInterval(checkYouTube, 2 * 60 * 1000);
     }, 3000);
 });
 
