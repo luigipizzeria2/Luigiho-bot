@@ -402,10 +402,14 @@ new SlashCommandBuilder()
     { body: [] }
 );
 
-    await rest.put(
-        Routes.applicationGuildCommands(clientId, guildId),
-        { body: commands }
-    );
+const targetGuildId = process.env.TEST_MODE === 'true' 
+    ? process.env.TEST_GUILD_ID 
+    : guildId;
+
+await rest.put(
+    Routes.applicationGuildCommands(clientId, targetGuildId),
+    { body: commands }
+);
 
     console.log("Slash commands registered.");
 }
