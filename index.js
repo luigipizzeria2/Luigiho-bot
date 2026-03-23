@@ -344,7 +344,50 @@ async function registerCommands() {
                 option.setName('time')
                     .setDescription('Time (e.g. 10m, 1h, 2d)')
                     .setRequired(true)
-            )
+            ),
+new SlashCommandBuilder()
+    .setName('8ball')
+    .setDescription('Ask the magic 8ball a question')
+    .addStringOption(option =>
+        option.setName('question')
+            .setDescription('Your question')
+            .setRequired(true)
+        ),
+
+new SlashCommandBuilder()
+    .setName('baldi')
+    .setDescription('baldiho command'),
+
+new SlashCommandBuilder()
+    .setName('lukasz')
+    .setDescription('lukasovo command'),
+
+new SlashCommandBuilder()
+    .setName('koika')
+    .setDescription('zvuk co dela kocka'),
+
+new SlashCommandBuilder()
+    .setName('baf')
+    .setDescription('vydes bota'),
+
+new SlashCommandBuilder()
+    .setName('setyoutube')
+    .setDescription('Set YouTube announcement channel')
+    .addChannelOption(option =>
+        option.setName('channel')
+            .setDescription('Channel to post announcements in')
+            .setRequired(true)
+    )
+    .addRoleOption(option =>
+        option.setName('role1')
+            .setDescription('Ping role for main channel https://www.youtube.com/channel/UCG6Ti9RLDK_B78hIAlCUdfQ')
+            .setRequired(true)
+    )
+    .addRoleOption(option =>
+        option.setName('role2')
+            .setDescription('Ping role for second channel https://www.youtube.com/channel/UCziBqG_7kDA4Jclw6BAh5dw')
+            .setRequired(true)
+    ),
 
     ].map(cmd => cmd.toJSON());
 
@@ -363,9 +406,66 @@ async function registerCommands() {
     console.log("Slash commands registered.");
 }
 
+// ================= YOUTUBE CHECKER =================
+const Parser = require('rss-parser');
+const rssParser = new Parser();
+
+const youtubeChannels = [
+    { id: 'UCG6Ti9RLDK_B78hIAlCUdfQ', name: 'Main Channel', roleKey: 'role1' },
+    { id: 'UCziBqG_7kDA4Jclw6BAh5dw', name: 'Second Channel', roleKey: 'role2' }
+];
+
+const lastVideoIds = new Map();
+
+async function checkYouTube() {
+    try {
+        const config = await database.collection("config").findOne({ name: "youtube" });
+        if (!config || !config.channelId) return;
+
+        const discordChannel = await client.channels.fetch(config.channelId).catch(() => null);
+        if (!discordChannel) return;
+
+        for (const yt of youtubeChannels) {
+            const feed = await rssParser.parseURL(
+                `https://www.youtube.com/feeds/videos.xml?channel_id=${yt.id}`
+            ).catch(() => null);
+            if (!feed || !feed.items.length) continue;
+
+            const latest = feed.items[0];
+            const lastId = lastVideoIds.get(yt.id);
+
+            if (lastId && lastId !== latest.id) {
+                const roleId = config[yt.roleKey];
+                await discordChannel.send(
+                    `${roleId ? `<@&${roleId}>` : ''} 🎥 ** ${yt.name} právě vydal nové video!**\n**${latest.title}**\n${latest.link}`
+                );
+            }
+
+            lastVideoIds.set(yt.id, latest.id);
+        }
+    } catch (err) {
+        console.error('YouTube check error:', err);
+    }
+}
+
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
+
+    // Initialize last video IDs on startup (no announcements for existing videos)
+    setTimeout(async () => {
+        for (const yt of youtubeChannels) {
+            const feed = await rssParser.parseURL(
+                `https://www.youtube.com/feeds/videos.xml?channel_id=${yt.id}`
+            ).catch(() => null);
+            if (feed && feed.items.length) {
+                lastVideoIds.set(yt.id, feed.items[0].id);
+            }
+        }
+        console.log('✅ YouTube checker initialized');
+        // Check every 5 minutes
+        setInterval(checkYouTube, 5 * 60 * 1000);
+    }, 3000);
 });
 
 // ================= FIND USER TICKET =================
@@ -594,7 +694,8 @@ if (interaction.isStringSelectMenu()) {
     if (interaction.customId !== "select_ticket_type") return;
 
     await interaction.deferReply({ ephemeral: true });
-
+const settings = await getSettings();
+const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
     try {
 
         if (findUserTicket(interaction.guild, interaction.user.id)) {
@@ -676,7 +777,7 @@ if (interaction.isStringSelectMenu()) {
             .setColor(0x00FF99);
 
         await channel.send({
-            content: staffRoleId ? `<@&${staffRoleId}>` : null,
+    content: staffRoleId ? `<@&${staffRoleId}> New ticket opened!` : null,
             embeds: [embed],
             components: [new ActionRowBuilder().addComponents(claimBtn, closeBtn)],
             allowedMentions: staffRoleId ? { roles: [staffRoleId] } : {}
@@ -757,7 +858,65 @@ if (interaction.customId === "claim_ticket") {
         }
     }
 });
+// ===== 8BALL =====
+if (interaction.commandName === '8ball') {
+    const responses = [
+        // ✅ EDIT THESE RESPONSES HOWEVER YOU LIKE
+        "Je to jasne.",
+        "bezpochyby",
+        "Ano, urcite.",
+        "s největší pravděpodobností.",
+        "rekl bych ze ano",
+        "Odpověď mlhavá, zkuste to znovu.",
+        "Zeptej se znovu pozdeji",
+        "Nyni nemuzu predpovedet",
+        "Nepocitej s tim",
+        "Moje odpoved zni ne",
+        "velice pochybne",
+        "Výhled není moc dobrý."
+    ];
+    const question = interaction.options.getString('question');
+    const answer = responses[Math.floor(Math.random() * responses.length)];
+    return interaction.reply(`🎱 **${question}**\n${answer}`);
+}
 
+// ===== FUN COMMANDS =====
+if (interaction.commandName === 'baldi') {
+    return interaction.reply('Nevim euhh');
+}
+
+if (interaction.commandName === 'lukasz') {
+    return interaction.reply('https://tenor.com/view/swedish-gif-18685828');
+}
+
+if (interaction.commandName === 'baf') {
+    return interaction.reply('AAAAAAAAAAAAAAAAA');
+}
+
+if (interaction.commandName === 'koika') {
+    return interaction.reply('MŇAU MŇAU uspokojive vrneni');
+}
+
+// ===== SETYOUTUBE =====
+if (interaction.commandName === 'setyoutube') {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({ content: "Admin only.", ephemeral: true });
+    }
+    const channel = interaction.options.getChannel('channel');
+    const role1 = interaction.options.getRole('role1');
+    const role2 = interaction.options.getRole('role2');
+
+    await database.collection("config").updateOne(
+        { name: "youtube" },
+        { $set: {
+            channelId: channel.id,
+            role1: role1.id,
+            role2: role2.id
+        }},
+        { upsert: true }
+    );
+    return interaction.reply({ content: `YouTube announcements will be posted in ${channel}`, ephemeral: true });
+}
 // ================= START =================
 (async () => {
     await connectDB();
