@@ -1002,15 +1002,6 @@ if (interaction.commandName === 'setyoutube') {
     );
     return interaction.reply({ content: `YouTube announcements will be posted in ${channel}`, ephemeral: true });
 }
-    // new commands before this
-} catch (err) {
-        console.error(err);
-        if (!interaction.replied && !interaction.deferred) {
-            interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
-        }
-    }
-});
-
 // ===== SETUP COUNTERS =====
 if (interaction.commandName === 'setupcounters') {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -1099,6 +1090,17 @@ if (interaction.commandName === 'setupcounters') {
 
     return interaction.editReply("✅ Stats channels created and updated!");
 }
+
+    // ========= END OF COMMANDS ==============
+} catch (err) {
+        console.error(err);
+        if (!interaction.replied && !interaction.deferred) {
+            interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
+        }
+    }
+});
+
+
 // ================= START =================
 (async () => {
     await connectDB();
