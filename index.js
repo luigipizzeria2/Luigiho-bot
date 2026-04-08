@@ -394,6 +394,10 @@ new SlashCommandBuilder()
             .setRequired(true)
     ),
 
+new SlashCommandBuilder()
+    .setName('setupcounters')
+    .setDescription('Create the stats voice channels')
+
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
@@ -461,6 +465,64 @@ client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
     client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
+
+    // Start counter updates every 10 minutes
+setInterval(async () => {
+    const config = await database.collection("config").findOne({ name: "counters" });
+    if (!config) return;
+    const guild = client.guilds.cache.get(config.guildId);
+    if (guild) await updateCounters(guild);
+}, 10 * 60 * 1000);
+
+    // ================= COUNTERS =================
+const MOD_ROLE_ID = '1259485036835770441';
+const BOT_ROLE_ID = '1259492949713092729';
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const YT_CHANNEL_1 = 'UCG6Ti9RLDK_B78hIAlCUdfQ';
+const YT_CHANNEL_2 = 'UCziBqG_7kDA4Jclw6BAh5dw';
+
+async function getSubscriberCount(channelId) {
+    try {
+        const res = await fetch(
+            `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`
+        );
+        const data = await res.json();
+        return data.items?.[0]?.statistics?.subscriberCount || '0';
+    } catch {
+        return '0';
+    }
+}
+
+async function updateCounters(guild) {
+    try {
+        const config = await database.collection("config").findOne({ name: "counters" });
+        if (!config) return;
+
+        await guild.members.fetch();
+
+        const totalMembers = guild.members.cache.filter(m => !m.user.bot).size;
+        const modCount = guild.members.cache.filter(m => m.roles.cache.has(MOD_ROLE_ID)).size;
+        const botCount = guild.members.cache.filter(m => m.roles.cache.has(BOT_ROLE_ID)).size;
+        const sub1 = await getSubscriberCount(YT_CHANNEL_1);
+        const sub2 = await getSubscriberCount(YT_CHANNEL_2);
+
+        const channels = [
+            { id: config.memberChannel, name: `👥 Členové: ${totalMembers}` },
+            { id: config.modChannel, name: `🛡️ Moderátoři: ${modCount}` },
+            { id: config.botChannel, name: `🤖 Boti: ${botCount}` },
+            { id: config.sub1Channel, name: `📺 Hlavní kanál: ... ${sub1}` },
+            { id: config.sub2Channel, name: `📺 Druhý kanál: ... ${sub2}` }
+        ];
+
+        for (const ch of channels) {
+            if (!ch.id) continue;
+            const channel = guild.channels.cache.get(ch.id);
+            if (channel) await channel.setName(ch.name).catch(() => {});
+        }
+    } catch (err) {
+        console.error('Counter update error:', err);
+    }
+}
 
     // Initialize last video IDs on startup (no announcements for existing videos)
     setTimeout(async () => {
@@ -948,6 +1010,95 @@ if (interaction.commandName === 'setyoutube') {
         }
     }
 });
+
+// ===== SETUP COUNTERS =====
+if (interaction.commandName === 'setupcounters') {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    // Find or create Stats category
+    let category = interaction.guild.channels.cache.find(
+        c => c.name === "📊 Statistiky" && c.type === ChannelType.GuildCategory
+    );
+    if (!category) {
+        category = await interaction.guild.channels.create({
+            name: "📊 Statistiky",
+            type: ChannelType.GuildCategory
+        });
+    }
+
+    const overwrites = [
+        {
+            id: interaction.guild.id,
+            deny: [PermissionsBitField.Flags.Connect]
+        },
+        {
+            id: interaction.guild.members.me.id,
+            allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.ManageChannels
+            ]
+        }
+    ];
+
+    // Create the 5 voice channels
+    const memberChannel = await interaction.guild.channels.create({
+        name: '👥 Členové: ...',
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: overwrites
+    });
+
+    const modChannel = await interaction.guild.channels.create({
+        name: '🛡️ Moderátoři: ...',
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: overwrites
+    });
+
+    const botChannel = await interaction.guild.channels.create({
+        name: '🤖 Boti: ...',
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: overwrites
+    });
+
+    const sub1Channel = await interaction.guild.channels.create({
+        name: '📺 Hlavní kanál: ...',
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: overwrites
+    });
+
+    const sub2Channel = await interaction.guild.channels.create({
+        name: '📺 Druhý kanál: ...',
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: overwrites
+    });
+
+    // Save channel IDs to database
+    await database.collection("config").updateOne(
+        { name: "counters" },
+        { $set: {
+            guildId: interaction.guild.id,
+            memberChannel: memberChannel.id,
+            modChannel: modChannel.id,
+            botChannel: botChannel.id,
+            sub1Channel: sub1Channel.id,
+            sub2Channel: sub2Channel.id
+        }},
+        { upsert: true }
+    );
+
+    // Run immediately
+    await updateCounters(interaction.guild);
+
+    return interaction.editReply("✅ Stats channels created and updated!");
+}
 // ================= START =================
 (async () => {
     await connectDB();
