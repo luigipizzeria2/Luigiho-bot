@@ -188,6 +188,9 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
     <div class="cmd"><span class="cmd-name">/koika</span><span class="cmd-desc">zvuk kocky</span></div>
     <div class="cmd"><span class="cmd-name">/setyoutube</span><span class="cmd-desc">Set YouTube announcement channel and ping roles</span></div>
     <div class="cmd"><span class="cmd-name">/setup</span><span class="cmd-desc">Configure staff role and enable/disable commands</span></div>
+    <div class="cmd"><span class="cmd-name">/setyoutube</span><span class="cmd-desc">Set YouTube announcement channel and ping roles</span></div>
+    <div class="cmd"><span class="cmd-name">/setupcounters</span><span class="cmd-desc">Create and initialize the stats voice channels</span></div>
+    <div class="cmd"><span class="cmd-name">/setup</span><span class="cmd-desc">Configure staff role and enable/disable commands</span></div>
 </div>
 </div>
 
