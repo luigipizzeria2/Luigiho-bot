@@ -155,6 +155,11 @@ app.get('/', (req, res) => res.send(`<!DOCTYPE html>
 </div>
 
 <div class="grid">
+    <div class="card">
+        <div class="card-icon">📊</div>
+        <h3>Live Stats Channels</h3>
+        <p>Voice channels that automatically update with member count, moderators, bots, and YouTube subscriber counts.</p>
+    </div>
   <div class="card">
     <div class="card-icon">🎟️</div>
     <h3>Ticket System</h3>
@@ -478,8 +483,10 @@ async function getSubscriberCount(channelId) {
             `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`
         );
         const data = await res.json();
+        console.log('YouTube API response for', channelId, JSON.stringify(data));
         return data.items?.[0]?.statistics?.subscriberCount || '0';
-    } catch {
+    } catch (err) {
+        console.error('YouTube API error:', err);
         return '0';
     }
 }
