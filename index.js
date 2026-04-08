@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const express = require('express');
 const app = express();
+const { XMLParser } = require('fast-xml-parser');
 
 app.get('/status', (req, res) => {
     res.json({ 
@@ -427,9 +428,6 @@ await rest.put(
     console.log("Slash commands registered.");
 }
 
-// ================= YOUTUBE CHECKER =================
-const Parser = require('rss-parser');
-const rssParser = new Parser();
 
 const youtubeChannels = [
     { id: 'UCG6Ti9RLDK_B78hIAlCUdfQ', name: 'luigipizzeria2', roleKey: 'role1' },
@@ -438,36 +436,6 @@ const youtubeChannels = [
 
 const lastVideoIds = new Map();
 
-async function checkYouTube() {
-    try {
-        const config = await database.collection("config").findOne({ name: "youtube" });
-        if (!config || !config.channelId) return;
-
-        const discordChannel = await client.channels.fetch(config.channelId).catch(() => null);
-        if (!discordChannel) return;
-
-        for (const yt of youtubeChannels) {
-            const feed = await rssParser.parseURL(
-                `https://www.youtube.com/feeds/videos.xml?channel_id=${yt.id}`
-            ).catch(() => null);
-            if (!feed || !feed.items.length) continue;
-
-            const latest = feed.items[0];
-            const lastId = lastVideoIds.get(yt.id);
-
-            if (lastId && lastId !== latest.id) {
-                const roleId = config[yt.roleKey];
-                await discordChannel.send(
-                    `${roleId ? `<@&${roleId}>` : ''} 🎥 ** ${yt.name} právě vydal nové video!**\n**${latest.title}**\n${latest.link}`
-                );
-            }
-
-            lastVideoIds.set(yt.id, latest.id);
-        }
-    } catch (err) {
-        console.error('YouTube check error:', err);
-    }
-}
 
 // ================= COUNTERS =================
 const MOD_ROLE_ID = '1259485036835770441';
@@ -525,14 +493,90 @@ client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
     client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
+    // Subscribe to YouTube webhooks
+setTimeout(async () => {
+    await subscribeToAll();
+    // Renew every 9 days (subscription lasts 10 days)
+    setInterval(subscribeToAll, 9 * 24 * 60 * 60 * 1000);
+}, 5000);
 
-    // Start counter updates every 10 minutes
-setInterval(async () => {
-    const config = await database.collection("config").findOne({ name: "counters" });
-    if (!config) return;
-    const guild = client.guilds.cache.get(config.guildId);
-    if (guild) await updateCounters(guild);
-}, 10 * 60 * 1000);
+// ================= YOUTUBE PUBSUBHUBBUB =================
+const KOYEB_URL = 'https://obvious-maribel-luigiho-pizzerie-242e17fc.koyeb.app';
+const xmlParser = new XMLParser();
+
+async function subscribeToChannel(channelId) {
+    const params = new URLSearchParams({
+        'hub.callback': `${KOYEB_URL}/youtube/webhook`,
+        'hub.topic': `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
+        'hub.verify': 'async',
+        'hub.mode': 'subscribe',
+        'hub.lease_seconds': '864000'
+    });
+
+    const res = await fetch('https://pubsubhubbub.appspot.com/subscribe', {
+        method: 'POST',
+        body: params
+    });
+
+    console.log(`PubSub subscribe for ${channelId}: ${res.status}`);
+}
+
+async function subscribeToAll() {
+    await subscribeToChannel(YT_CHANNEL_1);
+    await subscribeToChannel(YT_CHANNEL_2);
+}
+
+// Webhook verification (GET)
+app.get('/youtube/webhook', (req, res) => {
+    const challenge = req.query['hub.challenge'];
+    if (challenge) {
+        console.log('YouTube webhook verified!');
+        return res.status(200).send(challenge);
+    }
+    res.sendStatus(400);
+});
+
+// Webhook notification (POST)
+app.post('/youtube/webhook', express.text({ type: 'application/atom+xml' }), async (req, res) => {
+    res.sendStatus(200);
+
+    try {
+        const parsed = xmlParser.parse(req.body);
+        const entry = parsed?.feed?.entry;
+        if (!entry) return;
+
+        const videoId = entry['yt:videoId'];
+        const title = entry?.title;
+        const channelId = entry?.['yt:channelId'];
+        const link = `https://www.youtube.com/watch?v=${videoId}`;
+
+        if (!videoId || !title) return;
+
+        const config = await database.collection("config").findOne({ name: "youtube" });
+        if (!config || !config.channelId) return;
+
+        const discordChannel = await client.channels.fetch(config.channelId).catch(() => null);
+        if (!discordChannel) return;
+
+        const roleKey = channelId === YT_CHANNEL_1 ? 'role1' : 'role2';
+        const channelName = channelId === YT_CHANNEL_1 ? 'Hlavní kanál' : 'Druhý kanál';
+        const roleId = config[roleKey];
+
+        // Check if we already announced this video
+        const existing = await database.collection("announced").findOne({ videoId });
+        if (existing) return;
+
+        await database.collection("announced").insertOne({ videoId, announcedAt: new Date() });
+
+        await discordChannel.send(
+            `${roleId ? `<@&${roleId}>` : ''} 🎥 **Nové video na ${channelName}!**\n**${title}**\n${link}`
+        );
+
+        console.log(`Announced video: ${title}`);
+    } catch (err) {
+        console.error('Webhook error:', err);
+    }
+});
 
     // Initialize last video IDs on startup (no announcements for existing videos)
     setTimeout(async () => {
