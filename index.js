@@ -461,25 +461,13 @@ async function checkYouTube() {
     }
 }
 
-client.once(Events.ClientReady, () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
-    client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
-
-    // Start counter updates every 10 minutes
+ // Start counter updates every 10 minutes
 setInterval(async () => {
     const config = await database.collection("config").findOne({ name: "counters" });
     if (!config) return;
     const guild = client.guilds.cache.get(config.guildId);
     if (guild) await updateCounters(guild);
 }, 10 * 60 * 1000);
-
-    // ================= COUNTERS =================
-const MOD_ROLE_ID = '1259485036835770441';
-const BOT_ROLE_ID = '1259492949713092729';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const YT_CHANNEL_1 = 'UCG6Ti9RLDK_B78hIAlCUdfQ';
-const YT_CHANNEL_2 = 'UCziBqG_7kDA4Jclw6BAh5dw';
 
 async function getSubscriberCount(channelId) {
     try {
@@ -492,6 +480,19 @@ async function getSubscriberCount(channelId) {
         return '0';
     }
 }
+
+client.once(Events.ClientReady, () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
+    client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
+
+    // ================= COUNTERS =================
+const MOD_ROLE_ID = '1259485036835770441';
+const BOT_ROLE_ID = '1259492949713092729';
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const YT_CHANNEL_1 = 'UCG6Ti9RLDK_B78hIAlCUdfQ';
+const YT_CHANNEL_2 = 'UCziBqG_7kDA4Jclw6BAh5dw';
+
 
 async function updateCounters(guild) {
     try {
