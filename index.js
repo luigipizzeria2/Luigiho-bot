@@ -578,22 +578,6 @@ app.post('/youtube/webhook', express.text({ type: 'application/atom+xml' }), asy
     }
 });
 
-    // Initialize last video IDs on startup (no announcements for existing videos)
-    setTimeout(async () => {
-        for (const yt of youtubeChannels) {
-            const feed = await rssParser.parseURL(
-                `https://www.youtube.com/feeds/videos.xml?channel_id=${yt.id}`
-            ).catch(() => null);
-            if (feed && feed.items.length) {
-                lastVideoIds.set(yt.id, feed.items[0].id);
-            }
-        }
-        console.log('✅ YouTube checker initialized');
-        // Check every 5 minutes
-        setInterval(checkYouTube, 2 * 60 * 1000);
-    }, 3000);
-});
-
 // ================= FIND USER TICKET =================
 function findUserTicket(guild, userId) {
     return guild.channels.cache.find(channel =>
