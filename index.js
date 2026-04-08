@@ -428,15 +428,6 @@ await rest.put(
     console.log("Slash commands registered.");
 }
 
-
-const youtubeChannels = [
-    { id: 'UCG6Ti9RLDK_B78hIAlCUdfQ', name: 'luigipizzeria2', roleKey: 'role1' },
-    { id: 'UCziBqG_7kDA4Jclw6BAh5dw', name: 'lugi', roleKey: 'role2' }
-];
-
-const lastVideoIds = new Map();
-
-
 // ================= COUNTERS =================
 const MOD_ROLE_ID = '1259485036835770441';
 const BOT_ROLE_ID = '1259492949713092729';
@@ -488,17 +479,6 @@ async function updateCounters(guild) {
         console.error('Counter update error:', err);
     }
 }
-
-client.once(Events.ClientReady, () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
-    client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
-    // Subscribe to YouTube webhooks
-setTimeout(async () => {
-    await subscribeToAll();
-    // Renew every 9 days (subscription lasts 10 days)
-    setInterval(subscribeToAll, 9 * 24 * 60 * 60 * 1000);
-}, 5000);
 
 // ================= YOUTUBE PUBSUBHUBBUB =================
 const KOYEB_URL = 'https://obvious-maribel-luigiho-pizzerie-242e17fc.koyeb.app';
@@ -578,6 +558,27 @@ app.post('/youtube/webhook', express.text({ type: 'application/atom+xml' }), asy
     }
 });
 
+client.once(Events.ClientReady, () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
+    client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
+
+    // Counter updates every 10 minutes
+    setInterval(async () => {
+        const config = await database.collection("config").findOne({ name: "counters" });
+        if (!config) return;
+        const guild = client.guilds.cache.get(config.guildId);
+        if (guild) await updateCounters(guild);
+    }, 10 * 60 * 1000);
+
+    // Subscribe to YouTube webhooks
+    setTimeout(async () => {
+        await subscribeToAll();
+        setInterval(subscribeToAll, 9 * 24 * 60 * 60 * 1000);
+    }, 5000);
+});
+
+
 // ================= FIND USER TICKET =================
 function findUserTicket(guild, userId) {
     return guild.channels.cache.find(channel =>
@@ -589,555 +590,287 @@ function findUserTicket(guild, userId) {
 
 // ================= INTERACTIONS =================
 client.on(Events.InteractionCreate, async interaction => {
-
     try {
-
         // ================= SLASH COMMANDS =================
         if (interaction.isChatInputCommand()) {
             const settings = await getSettings();
+            let disabled = settings.disabled || [];
+            if (!Array.isArray(disabled)) disabled = [disabled];
 
-let disabled = settings.disabled || [];
-
-if (!Array.isArray(disabled)) {
-    disabled = [disabled];
-}
-
-if (disabled.includes(interaction.commandName.toLowerCase())) {
-    return interaction.reply({
-        content: "❌ This command is disabled.",
-        ephemeral: true
-    });
-}
+            if (disabled.includes(interaction.commandName.toLowerCase())) {
+                return interaction.reply({ content: "❌ This command is disabled.", ephemeral: true });
+            }
 
             // ==== SETUP ====
-if (interaction.commandName === 'setup') {
+            if (interaction.commandName === 'setup') {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
+                }
+                const role = interaction.options.getRole('staffrole');
+                const enable = interaction.options.getString('enable');
+                const disable = interaction.options.getString('disable');
+                const toggleable = ['ticketpanel', 'close', 'suggest', '8ball', 'baldi', 'lukasz', 'koika', 'baf', 'setyoutube'];
 
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
-    }
-
-    const role = interaction.options.getRole('staffrole');
-    const enable = interaction.options.getString('enable');
-    const disable = interaction.options.getString('disable');
-
-    // List of all toggleable commands
-    const toggleable = [
-        'ticketpanel', 'close', 'suggest', '8ball',
-        'baldi', 'lukasz', 'koika', 'baf', 'setyoutube'
-    ];
-
-    // If no options provided, show current status
-    if (!role && !enable && !disable) {
-        const settings = await getSettings();
-        const disabled = settings.disabled || [];
-
-        const statusList = toggleable.map(cmd =>
-            `${disabled.includes(cmd) ? '🔴' : '🟢'} /${cmd}`
-        ).join('\n');
-
-        return interaction.reply({
-            content: `**Command Status:**\n${statusList}\n\nUse \`/setup enable:<command>\` or \`/setup disable:<command>\` to toggle.`,
-            ephemeral: true
-        });
-    }
-
-    const update = {};
-
-    if (role) {
-        update.$set = { staffRole: role.id };
-    }
-
-    if (enable) {
-        if (!toggleable.includes(enable.toLowerCase())) {
-            return interaction.reply({
-                content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`,
-                ephemeral: true
-            });
-        }
-        update.$pull = { disabled: enable.toLowerCase() };
-    }
-
-    if (disable) {
-        if (!toggleable.includes(disable.toLowerCase())) {
-            return interaction.reply({
-                content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`,
-                ephemeral: true
-            });
-        }
-        update.$addToSet = { disabled: disable.toLowerCase() };
-    }
-
-    await database.collection("config").updateOne(
-        { name: "settings" },
-        update,
-        { upsert: true }
-    );
-
-    return interaction.reply({ content: "✅ Settings updated.", ephemeral: true });
-}
-
-            // ===== TICKET PANEL =====
-            if (interaction.commandName === 'ticketpanel') {
-
-                if (findUserTicket(interaction.guild, interaction.user.id)) {
+                if (!role && !enable && !disable) {
+                    const settings = await getSettings();
+                    const disabled = settings.disabled || [];
+                    const statusList = toggleable.map(cmd =>
+                        `${disabled.includes(cmd) ? '🔴' : '🟢'} /${cmd}`
+                    ).join('\n');
                     return interaction.reply({
-                        content: "❌ You already have an open ticket.",
+                        content: `**Command Status:**\n${statusList}\n\nUse \`/setup enable:<command>\` or \`/setup disable:<command>\` to toggle.`,
                         ephemeral: true
                     });
                 }
 
+                const update = {};
+                if (role) update.$set = { staffRole: role.id };
+                if (enable) {
+                    if (!toggleable.includes(enable.toLowerCase())) {
+                        return interaction.reply({ content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`, ephemeral: true });
+                    }
+                    update.$pull = { disabled: enable.toLowerCase() };
+                }
+                if (disable) {
+                    if (!toggleable.includes(disable.toLowerCase())) {
+                        return interaction.reply({ content: `❌ Unknown command. Available: ${toggleable.map(c => `\`${c}\``).join(', ')}`, ephemeral: true });
+                    }
+                    update.$addToSet = { disabled: disable.toLowerCase() };
+                }
+                await database.collection("config").updateOne({ name: "settings" }, update, { upsert: true });
+                return interaction.reply({ content: "✅ Settings updated.", ephemeral: true });
+            }
+
+            // ===== TICKET PANEL =====
+            if (interaction.commandName === 'ticketpanel') {
+                if (findUserTicket(interaction.guild, interaction.user.id)) {
+                    return interaction.reply({ content: "❌ You already have an open ticket.", ephemeral: true });
+                }
                 const embed = new EmbedBuilder()
                     .setTitle("🎟 Open a Ticket")
                     .setDescription("Select the type of ticket below.")
                     .setColor(0x5865F2);
-
                 const customTypes = interaction.options.getString("types");
-
-let ticketTypes = [
-    { label: "Minecraft Server Help", value: "minecraft", emoji: "🎮" },
-    { label: "Suggestion", value: "suggestion", emoji: "💡" },
-    { label: "Need Help", value: "help", emoji: "❓" },
-    { label: "YouTube Collab", value: "youtube", emoji: "🎥" }
-];
-
-if (customTypes) {
-    ticketTypes = customTypes.split(",").map(t => ({
-        label: t.trim(),
-        value: t.trim().toLowerCase()
-    }));
-}
-
-const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId("select_ticket_type")
-    .setPlaceholder("Choose a ticket type")
-    .addOptions(ticketTypes);
-
-                return interaction.reply({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(selectMenu)]
-                });
+                let ticketTypes = [
+                    { label: "Minecraft Server Help", value: "minecraft", emoji: "🎮" },
+                    { label: "Suggestion", value: "suggestion", emoji: "💡" },
+                    { label: "Need Help", value: "help", emoji: "❓" },
+                    { label: "YouTube Collab", value: "youtube", emoji: "🎥" }
+                ];
+                if (customTypes) {
+                    ticketTypes = customTypes.split(",").map(t => ({ label: t.trim(), value: t.trim().toLowerCase() }));
+                }
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId("select_ticket_type")
+                    .setPlaceholder("Choose a ticket type")
+                    .addOptions(ticketTypes);
+                return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
             }
 
             // ===== CLOSE COMMAND =====
             if (interaction.commandName === 'close') {
-
                 await interaction.deferReply({ ephemeral: true });
-
                 const ticket = findUserTicket(interaction.guild, interaction.user.id);
-
-                if (!ticket) {
-                    return interaction.editReply("❌ Nemáš otevřený ticket.");
-                }
-
+                if (!ticket) return interaction.editReply("❌ Nemáš otevřený ticket.");
                 await interaction.editReply("🔒 Ticket se uzavře za 5 sekund");
-
-                setTimeout(() => {
-                    ticket.delete().catch(() => {});
-                }, 5000);
-
+                setTimeout(() => { ticket.delete().catch(() => {}); }, 5000);
                 return;
             }
 
             // ===== SUGGEST COMMAND =====
             if (interaction.commandName === 'suggest') {
-
                 const text = interaction.options.getString('text');
                 const duration = parseTime(interaction.options.getString('time'));
-
                 if (!duration) {
-                    return interaction.reply({
-                        content: "❌ Invalid time format. Use: 10m, 1h, 2d, 30s",
-                        ephemeral: true
-                    });
+                    return interaction.reply({ content: "❌ Invalid time format. Use: 10m, 1h, 2d, 30s", ephemeral: true });
                 }
-
                 const embed = new EmbedBuilder()
                     .setTitle("📢 Nový návrh")
                     .setDescription(text)
-                    .addFields(
-                        { name: "👍 Ano", value: "0", inline: true },
-                        { name: "👎 Ne", value: "0", inline: true }
-                    )
+                    .addFields({ name: "👍 Ano", value: "0", inline: true }, { name: "👎 Ne", value: "0", inline: true })
                     .setColor(0x5865F2);
-
-                const yesBtn = new ButtonBuilder()
-                    .setCustomId("vote_yes")
-                    .setLabel("👍 Yes")
-                    .setStyle(ButtonStyle.Success);
-
-                const noBtn = new ButtonBuilder()
-                    .setCustomId("vote_no")
-                    .setLabel("👎 No")
-                    .setStyle(ButtonStyle.Danger);
-
+                const yesBtn = new ButtonBuilder().setCustomId("vote_yes").setLabel("👍 Yes").setStyle(ButtonStyle.Success);
+                const noBtn = new ButtonBuilder().setCustomId("vote_no").setLabel("👎 No").setStyle(ButtonStyle.Danger);
                 const message = await interaction.reply({
                     embeds: [embed],
                     components: [new ActionRowBuilder().addComponents(yesBtn, noBtn)],
                     fetchReply: true
                 });
-
                 activePolls.set(message.id, { yes: new Set(), no: new Set() });
-
                 setTimeout(async () => {
-
                     const poll = activePolls.get(message.id);
                     if (!poll) return;
-
                     const finalEmbed = new EmbedBuilder()
                         .setTitle("📊 Poll Ended")
                         .setDescription(text)
-                        .addFields(
-                            { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                            { name: "👎 No", value: `${poll.no.size}`, inline: true }
-                        )
+                        .addFields({ name: "👍 Yes", value: `${poll.yes.size}`, inline: true }, { name: "👎 No", value: `${poll.no.size}`, inline: true })
                         .setColor(0x00FF99);
-
                     const disabledRow = new ActionRowBuilder().addComponents(
                         ButtonBuilder.from(yesBtn).setDisabled(true),
                         ButtonBuilder.from(noBtn).setDisabled(true)
                     );
-
-                    await message.edit({
-                        embeds: [finalEmbed],
-                        components: [disabledRow]
-                    });
-
+                    await message.edit({ embeds: [finalEmbed], components: [disabledRow] });
                     const voters = [...new Set([...poll.yes, ...poll.no])];
-
                     if (voters.length > 0) {
                         const mentions = voters.map(id => `<@${id}>`).join(' ');
                         await message.channel.send(`📢 Poll ended! Thanks for voting: ${mentions}`);
                     }
-
                     activePolls.delete(message.id);
-
                 }, duration);
-
                 return;
+            }
+
+            // ===== 8BALL =====
+            if (interaction.commandName === '8ball') {
+                const responses = [
+                    "Je to jasne.", "bezpochyby", "Ano, urcite.",
+                    "s největší pravděpodobností.", "rekl bych ze ano",
+                    "Odpověď mlhavá, zkuste to znovu.", "Zeptej se znovu pozdeji",
+                    "Nyni nemuzu predpovedet", "Nepocitej s tim",
+                    "Moje odpoved zni ne", "velice pochybne", "Výhled není moc dobrý."
+                ];
+                const question = interaction.options.getString('question');
+                const answer = responses[Math.floor(Math.random() * responses.length)];
+                return interaction.reply(`🎱 **${question}**\n${answer}`);
+            }
+
+            // ===== FUN COMMANDS =====
+            if (interaction.commandName === 'baldi') return interaction.reply('Nevim euhh');
+            if (interaction.commandName === 'lukasz') return interaction.reply('https://tenor.com/view/swedish-gif-18685828');
+            if (interaction.commandName === 'baf') return interaction.reply('AAAAAAAAAAAAAAAAA');
+            if (interaction.commandName === 'koika') return interaction.reply('MŇAU MŇAU uspokojive vrneni');
+
+            // ===== SETYOUTUBE =====
+            if (interaction.commandName === 'setyoutube') {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return interaction.reply({ content: "Admin only.", ephemeral: true });
+                }
+                const channel = interaction.options.getChannel('channel');
+                const role1 = interaction.options.getRole('role1');
+                const role2 = interaction.options.getRole('role2');
+                await database.collection("config").updateOne(
+                    { name: "youtube" },
+                    { $set: { channelId: channel.id, role1: role1.id, role2: role2.id }},
+                    { upsert: true }
+                );
+                return interaction.reply({ content: `YouTube announcements will be posted in ${channel}`, ephemeral: true });
+            }
+
+            // ===== SETUP COUNTERS =====
+            if (interaction.commandName === 'setupcounters') {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
+                }
+                await interaction.deferReply({ ephemeral: true });
+
+                let category = interaction.guild.channels.cache.find(
+                    c => c.name === "📊 Statistiky" && c.type === ChannelType.GuildCategory
+                );
+                if (!category) {
+                    category = await interaction.guild.channels.create({ name: "📊 Statistiky", type: ChannelType.GuildCategory });
+                }
+                const overwrites = [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.Connect] },
+                    { id: interaction.guild.members.me.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ManageChannels] }
+                ];
+
+                const memberChannel = await interaction.guild.channels.create({ name: '👥 Členové: ...', type: ChannelType.GuildVoice, parent: category.id, permissionOverwrites: overwrites });
+                const modChannel = await interaction.guild.channels.create({ name: '🛡️ Moderátoři: ...', type: ChannelType.GuildVoice, parent: category.id, permissionOverwrites: overwrites });
+                const botChannel = await interaction.guild.channels.create({ name: '🤖 Boti: ...', type: ChannelType.GuildVoice, parent: category.id, permissionOverwrites: overwrites });
+                const sub1Channel = await interaction.guild.channels.create({ name: '📺 Hlavní kanál: ...', type: ChannelType.GuildVoice, parent: category.id, permissionOverwrites: overwrites });
+                const sub2Channel = await interaction.guild.channels.create({ name: '📺 Druhý kanál: ...', type: ChannelType.GuildVoice, parent: category.id, permissionOverwrites: overwrites });
+
+                await database.collection("config").updateOne(
+                    { name: "counters" },
+                    { $set: { guildId: interaction.guild.id, memberChannel: memberChannel.id, modChannel: modChannel.id, botChannel: botChannel.id, sub1Channel: sub1Channel.id, sub2Channel: sub2Channel.id }},
+                    { upsert: true }
+                );
+                await updateCounters(interaction.guild);
+                return interaction.editReply("✅ Stats channels created and updated!");
             }
         }
 
         // ================= SELECT MENU =================
-if (interaction.isStringSelectMenu()) {
-
-    if (interaction.customId !== "select_ticket_type") return;
-
-    await interaction.deferReply({ ephemeral: true });
-const settings = await getSettings();
-const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
-    try {
-
-        if (findUserTicket(interaction.guild, interaction.user.id)) {
-            return interaction.editReply({
-                content: "❌ You already have an open ticket."
-            });
-        }
-
-        const type = interaction.values[0];
-        const count = await incrementTicketCount();
-
-        let category = interaction.guild.channels.cache.find(
-            c => c.name === "Tickets" && c.type === ChannelType.GuildCategory
-        );
-
-        if (!category) {
-            category = await interaction.guild.channels.create({
-                name: "Tickets",
-                type: ChannelType.GuildCategory
-            });
-        }
-
-        const permissionOverwrites = [
-            {
-                id: interaction.guild.id,
-                deny: [PermissionsBitField.Flags.ViewChannel]
-            },
-            {
-                id: interaction.user.id,
-                allow: [
-                    PermissionsBitField.Flags.ViewChannel,
-                    PermissionsBitField.Flags.SendMessages
-                ]
-            },
-            {
-                id: interaction.guild.members.me.id,
-                allow: [
-                    PermissionsBitField.Flags.ViewChannel,
-                    PermissionsBitField.Flags.SendMessages
-                ]
+        if (interaction.isStringSelectMenu()) {
+            if (interaction.customId !== "select_ticket_type") return;
+            await interaction.deferReply({ ephemeral: true });
+            const settings = await getSettings();
+            const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
+            try {
+                if (findUserTicket(interaction.guild, interaction.user.id)) {
+                    return interaction.editReply({ content: "❌ You already have an open ticket." });
+                }
+                const type = interaction.values[0];
+                const count = await incrementTicketCount();
+                let category = interaction.guild.channels.cache.find(c => c.name === "Tickets" && c.type === ChannelType.GuildCategory);
+                if (!category) {
+                    category = await interaction.guild.channels.create({ name: "Tickets", type: ChannelType.GuildCategory });
+                }
+                const permissionOverwrites = [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: interaction.guild.members.me.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                ];
+                if (staffRoleId) {
+                    permissionOverwrites.push({ id: staffRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] });
+                }
+                const channel = await interaction.guild.channels.create({
+                    name: `${type}-${interaction.user.username}`.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+                    parent: category.id,
+                    permissionOverwrites
+                });
+                const claimBtn = new ButtonBuilder().setCustomId("claim_ticket").setLabel("Claim Ticket").setStyle(ButtonStyle.Success);
+                const closeBtn = new ButtonBuilder().setCustomId("close_ticket").setLabel("Close Ticket").setStyle(ButtonStyle.Danger);
+                const embed = new EmbedBuilder()
+                    .setTitle(`🎟 Ticket #${count}`)
+                    .setDescription(`Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`)
+                    .setColor(0x00FF99);
+                await channel.send({
+                    content: staffRoleId ? `<@&${staffRoleId}> New ticket opened!` : null,
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(claimBtn, closeBtn)],
+                    allowedMentions: staffRoleId ? { roles: [staffRoleId] } : {}
+                });
+                return interaction.editReply(`✅ Ticket created: ${channel}`);
+            } catch (err) {
+                console.error("Ticket error:", err);
+                return interaction.editReply("❌ Failed to create ticket. Check bot permissions.");
             }
-        ];
-
-        // Only add staff role if it exists
-        if (staffRoleId) {
-            permissionOverwrites.push({
-                id: staffRoleId,
-                allow: [
-                    PermissionsBitField.Flags.ViewChannel,
-                    PermissionsBitField.Flags.SendMessages
-                ]
-            });
         }
-
-        const channel = await interaction.guild.channels.create({
-            name: `${type}-${interaction.user.username}`
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, ''),
-            parent: category.id,
-            permissionOverwrites
-        });
-
-        const claimBtn = new ButtonBuilder()
-            .setCustomId("claim_ticket")
-            .setLabel("Claim Ticket")
-            .setStyle(ButtonStyle.Success);
-
-        const closeBtn = new ButtonBuilder()
-            .setCustomId("close_ticket")
-            .setLabel("Close Ticket")
-            .setStyle(ButtonStyle.Danger);
-
-        const embed = new EmbedBuilder()
-            .setTitle(`🎟 Ticket #${count}`)
-            .setDescription(
-                `Type: **${type}**\nOpened by: ${interaction.user}\n\nClaimed by: ❌ Not claimed`
-            )
-            .setColor(0x00FF99);
-
-        await channel.send({
-    content: staffRoleId ? `<@&${staffRoleId}> New ticket opened!` : null,
-            embeds: [embed],
-            components: [new ActionRowBuilder().addComponents(claimBtn, closeBtn)],
-            allowedMentions: staffRoleId ? { roles: [staffRoleId] } : {}
-        });
-
-        return interaction.editReply(`✅ Ticket created: ${channel}`);
-
-    } catch (err) {
-        console.error("Ticket error:", err);
-        return interaction.editReply("❌ Failed to create ticket. Check bot permissions.");
-    }
-}
 
         // ================= BUTTONS =================
         if (interaction.isButton()) {
-
-            // Close Ticket Button
             if (interaction.customId === "close_ticket") {
                 await interaction.reply("🔒 Closing ticket in 5 seconds...");
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
                 return;
             }
-
-            // Claim Ticket Button
-if (interaction.customId === "claim_ticket") {
-
-    const settings = await getSettings();
-    const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
-
-    if (!staffRoleId || !interaction.member.roles.cache.has(staffRoleId)) {
-        return interaction.reply({
-            content: "❌ Only staff can claim tickets.",
-            ephemeral: true
-        });
-    }
-
-    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-
-    embed.setDescription(
-        embed.data.description.replace(
-            "❌ Not claimed",
-            `✅ Claimed by ${interaction.user}`
-        )
-    );
-
-    return interaction.update({
-        embeds: [embed]
-    });
-}
-
-            // Voting Buttons
+            if (interaction.customId === "claim_ticket") {
+                const settings = await getSettings();
+                const staffRoleId = settings.staffRole || process.env.STAFF_ROLE_ID;
+                if (!staffRoleId || !interaction.member.roles.cache.has(staffRoleId)) {
+                    return interaction.reply({ content: "❌ Only staff can claim tickets.", ephemeral: true });
+                }
+                const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+                embed.setDescription(embed.data.description.replace("❌ Not claimed", `✅ Claimed by ${interaction.user}`));
+                return interaction.update({ embeds: [embed] });
+            }
             const poll = activePolls.get(interaction.message.id);
             if (!poll) return;
-
-            if (interaction.customId === "vote_yes") {
-                poll.no.delete(interaction.user.id);
-                poll.yes.add(interaction.user.id);
-            }
-
-            if (interaction.customId === "vote_no") {
-                poll.yes.delete(interaction.user.id);
-                poll.no.add(interaction.user.id);
-            }
-
+            if (interaction.customId === "vote_yes") { poll.no.delete(interaction.user.id); poll.yes.add(interaction.user.id); }
+            if (interaction.customId === "vote_no") { poll.yes.delete(interaction.user.id); poll.no.add(interaction.user.id); }
             const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-                .setFields(
-                    { name: "👍 Yes", value: `${poll.yes.size}`, inline: true },
-                    { name: "👎 No", value: `${poll.no.size}`, inline: true }
-                );
-
+                .setFields({ name: "👍 Yes", value: `${poll.yes.size}`, inline: true }, { name: "👎 No", value: `${poll.no.size}`, inline: true });
             await interaction.update({ embeds: [updatedEmbed] });
         }
 
-
-// ===== 8BALL =====
-if (interaction.commandName === '8ball') {
-    const responses = [
-        // ✅ EDIT THESE RESPONSES HOWEVER YOU LIKE
-        "Je to jasne.",
-        "bezpochyby",
-        "Ano, urcite.",
-        "s největší pravděpodobností.",
-        "rekl bych ze ano",
-        "Odpověď mlhavá, zkuste to znovu.",
-        "Zeptej se znovu pozdeji",
-        "Nyni nemuzu predpovedet",
-        "Nepocitej s tim",
-        "Moje odpoved zni ne",
-        "velice pochybne",
-        "Výhled není moc dobrý."
-    ];
-    const question = interaction.options.getString('question');
-    const answer = responses[Math.floor(Math.random() * responses.length)];
-    return interaction.reply(`🎱 **${question}**\n${answer}`);
-}
-
-// ===== FUN COMMANDS =====
-if (interaction.commandName === 'baldi') {
-    return interaction.reply('Nevim euhh');
-}
-
-if (interaction.commandName === 'lukasz') {
-    return interaction.reply('https://tenor.com/view/swedish-gif-18685828');
-}
-
-if (interaction.commandName === 'baf') {
-    return interaction.reply('AAAAAAAAAAAAAAAAA');
-}
-
-if (interaction.commandName === 'koika') {
-    return interaction.reply('MŇAU MŇAU uspokojive vrneni');
-}
-
-// ===== SETYOUTUBE =====
-if (interaction.commandName === 'setyoutube') {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({ content: "Admin only.", ephemeral: true });
-    }
-    const channel = interaction.options.getChannel('channel');
-    const role1 = interaction.options.getRole('role1');
-    const role2 = interaction.options.getRole('role2');
-
-    await database.collection("config").updateOne(
-        { name: "youtube" },
-        { $set: {
-            channelId: channel.id,
-            role1: role1.id,
-            role2: role2.id
-        }},
-        { upsert: true }
-    );
-    return interaction.reply({ content: `YouTube announcements will be posted in ${channel}`, ephemeral: true });
-}
-// ===== SETUP COUNTERS =====
-if (interaction.commandName === 'setupcounters') {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    // Find or create Stats category
-    let category = interaction.guild.channels.cache.find(
-        c => c.name === "📊 Statistiky" && c.type === ChannelType.GuildCategory
-    );
-    if (!category) {
-        category = await interaction.guild.channels.create({
-            name: "📊 Statistiky",
-            type: ChannelType.GuildCategory
-        });
-    }
-
-    const overwrites = [
-        {
-            id: interaction.guild.id,
-            deny: [PermissionsBitField.Flags.Connect]
-        },
-        {
-            id: interaction.guild.members.me.id,
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.ManageChannels
-            ]
-        }
-    ];
-
-    // Create the 5 voice channels
-    const memberChannel = await interaction.guild.channels.create({
-        name: '👥 Členové: ...',
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: overwrites
-    });
-
-    const modChannel = await interaction.guild.channels.create({
-        name: '🛡️ Moderátoři: ...',
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: overwrites
-    });
-
-    const botChannel = await interaction.guild.channels.create({
-        name: '🤖 Boti: ...',
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: overwrites
-    });
-
-    const sub1Channel = await interaction.guild.channels.create({
-        name: '📺 Hlavní kanál: ...',
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: overwrites
-    });
-
-    const sub2Channel = await interaction.guild.channels.create({
-        name: '📺 Druhý kanál: ...',
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: overwrites
-    });
-
-    // Save channel IDs to database
-    await database.collection("config").updateOne(
-        { name: "counters" },
-        { $set: {
-            guildId: interaction.guild.id,
-            memberChannel: memberChannel.id,
-            modChannel: modChannel.id,
-            botChannel: botChannel.id,
-            sub1Channel: sub1Channel.id,
-            sub2Channel: sub2Channel.id
-        }},
-        { upsert: true }
-    );
-
-    // Run immediately
-    await updateCounters(interaction.guild);
-
-    return interaction.editReply("✅ Stats channels created and updated!");
-}
-
-    // ========= END OF COMMANDS ==============
-} catch (err) {
+    } catch (err) {
         console.error(err);
         if (!interaction.replied && !interaction.deferred) {
             interaction.reply({ content: "❌ An error occurred.", ephemeral: true }).catch(() => {});
         }
     }
 });
-
 
 // ================= START =================
 (async () => {
