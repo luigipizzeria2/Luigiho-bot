@@ -519,9 +519,11 @@ app.get('/youtube/webhook', (req, res) => {
 // Webhook notification (POST)
 app.post('/youtube/webhook', express.text({ type: 'application/atom+xml' }), async (req, res) => {
     res.sendStatus(200);
+    console.log('Webhook received! Body:', req.body);
 
     try {
         const parsed = xmlParser.parse(req.body);
+        console.log('Parsed:', JSON.stringify(parsed));
         const entry = parsed?.feed?.entry;
         if (!entry) return;
 
