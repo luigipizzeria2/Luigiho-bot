@@ -563,7 +563,6 @@ client.once(Events.ClientReady, () => {
     app.locals.avatarURL = client.user.displayAvatarURL({ size: 256, extension: 'png' });
     client.user.setActivity('luigipizzeria2', { type: ActivityType.Watching });
 
-    // Counter updates every 10 minutes
     setInterval(async () => {
         const config = await database.collection("config").findOne({ name: "counters" });
         if (!config) return;
@@ -571,9 +570,9 @@ client.once(Events.ClientReady, () => {
         if (guild) await updateCounters(guild);
     }, 10 * 60 * 1000);
 
-    // Subscribe to YouTube webhooks
     setTimeout(async () => {
         await subscribeToAll();
+        console.log('✅ PubSub subscriptions sent');
         setInterval(subscribeToAll, 9 * 24 * 60 * 60 * 1000);
     }, 5000);
 });
