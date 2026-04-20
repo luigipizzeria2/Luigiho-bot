@@ -529,21 +529,15 @@ app.post('/youtube/webhook', express.text({ type: '*/*' }), async (req, res) => 
             console.log('No body received!');
             return;
         }
+
         const parsed = xmlParser.parse(req.body);
         console.log('Parsed:', JSON.stringify(parsed));
+
         const entry = parsed?.feed?.entry;
         if (!entry) {
             console.log('No entry in feed!');
             return;
         }
-
-
-
-    try {
-        const parsed = xmlParser.parse(req.body);
-        console.log('Parsed:', JSON.stringify(parsed));
-        const entry = parsed?.feed?.entry;
-        if (!entry) return;
 
         const videoId = entry['yt:videoId'];
         const title = entry?.title;
@@ -562,11 +556,13 @@ app.post('/youtube/webhook', express.text({ type: '*/*' }), async (req, res) => 
         const channelName = channelId === YT_CHANNEL_1 ? 'Hlavní kanál' : 'Druhý kanál';
         const roleId = config[roleKey];
 
-        // Check if we already announced this video
         const existing = await database.collection("announced").findOne({ videoId });
         if (existing) return;
 
-        await database.collection("announced").insertOne({ videoId, announcedAt: new Date() });
+        await database.collection("announced").insertOne({
+            videoId,
+            announcedAt: new Date()
+        });
 
         await discordChannel.send(
             `${roleId ? `<@&${roleId}>` : ''} 🎥 **Nové video na ${channelName}!**\n**${title}**\n${link}`
