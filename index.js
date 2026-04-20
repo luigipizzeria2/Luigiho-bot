@@ -516,10 +516,28 @@ app.get('/youtube/webhook', (req, res) => {
     res.sendStatus(400);
 });
 
-// Webhook notification (POST)
-app.post('/youtube/webhook', express.text({ type: 'application/atom+xml' }), async (req, res) => {
+// error message send
+app.post('/youtube/webhook', express.text({ type: '*/*' }), async (req, res) => {
     res.sendStatus(200);
-    console.log('Webhook received! Body:', req.body);
+    console.log('Webhook POST received!');
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Body type:', typeof req.body);
+    console.log('Body:', req.body);
+
+    try {
+        if (!req.body) {
+            console.log('No body received!');
+            return;
+        }
+        const parsed = xmlParser.parse(req.body);
+        console.log('Parsed:', JSON.stringify(parsed));
+        const entry = parsed?.feed?.entry;
+        if (!entry) {
+            console.log('No entry in feed!');
+            return;
+        }
+
+
 
     try {
         const parsed = xmlParser.parse(req.body);
